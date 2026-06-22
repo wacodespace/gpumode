@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PTX 是地图，SASS 是地形</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: #fafafa;
+  color: #1a1a1a;
+  padding: 3rem 2rem;
+  max-width: 1300px;
+  margin: 0 auto;
+}
+.label {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 0.25rem 0.6rem;
+  border: 1px solid #ccc;
+  margin-bottom: 1rem;
+}
+h1 {
+  font-size: 2.2rem;
+  font-weight: 800;
+  margin-bottom: 0.5rem;
+}
+.subtitle {
+  font-size: 1rem;
+  color: #444;
+  line-height: 1.6;
+  margin-bottom: 2.5rem;
+}
+.panels {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+  margin-bottom: 2.5rem;
+}
+.panel {
+  border: 1px solid #e0e0e0;
+  background: #fff;
+  padding: 2rem;
+}
+.panel--sass {
+  border-top: 3px solid #333;
+}
+.panel--ptx {
+  border-top: 3px solid #aaa;
+}
+.panel h2 {
+  font-size: 1.3rem;
+  font-weight: 700;
+  margin-bottom: 1.2rem;
+}
+.code-block {
+  background: #f5f5f0;
+  border: 1px solid #e8e8e3;
+  padding: 1rem 1.2rem;
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 0.8rem;
+  line-height: 1.8;
+  margin-bottom: 1.5rem;
+  overflow-x: auto;
+}
+.code-block .inst { color: #c0392b; }
+.code-block .inst-blue { color: #2980b9; }
+.code-block .comment { color: #888; }
+.traits {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+.trait-box {
+  border: 1px solid #e0e0e0;
+  padding: 1rem;
+}
+.trait-box h3 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+.trait-box p {
+  font-size: 0.82rem;
+  color: #555;
+  line-height: 1.6;
+}
+.correlation {
+  border: 1px solid #e0e0e0;
+  border-top: 2px solid #8b6914;
+  background: #fff;
+  padding: 1.5rem;
+}
+.correlation .cor-label {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #8b6914;
+  margin-bottom: 1rem;
+}
+.cor-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 1.5rem;
+}
+.cor-item {
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: #444;
+}
+.cor-item code {
+  background: #f5f5f0;
+  padding: 0.15rem 0.4rem;
+  font-size: 0.8rem;
+  border-radius: 2px;
+}
+@media (max-width: 800px) {
+  .panels { grid-template-columns: 1fr; }
+  .cor-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<div class="label">PTX vs SASS</div>
+<h1>PTX 是地图，SASS 是地形</h1>
+<p class="subtitle">PTX 暴露编译器的意图；SASS 确认 GPU 最终实际执行的指令序列。</p>
+
+<div class="panels">
+  <div class="panel panel--ptx">
+    <h2>当你需要可读的 lowering 结构时，读 PTX</h2>
+    <div class="code-block">
+      <span class="inst">ld.global.v4.u32</span> <span class="comment">// 向量宽度与内存空间</span><br>
+      <span class="inst">st.local.u64</span>    <span class="comment">// local memory 流量</span><br>
+      <span class="inst">mma.sync</span>        <span class="comment">// tensor-core 意图</span><br>
+      <span class="inst-blue">bar.sync</span>        <span class="comment">// 同步形态</span>
+    </div>
+    <div class="traits">
+      <div class="trait-box">
+        <h3>适合用于</h3>
+        <p>源码映射、内存空间确认、寄存器声明、广泛的模式检测，以及可读的结构证据。</p>
+      </div>
+      <div class="trait-box">
+        <h3>需要注意</h3>
+        <p>PTX 不是最终的调度、不是最终的寄存器分配、也不是最终的目标指令选择。</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel panel--sass">
+    <h2>当你需要知道 GPU 实际跑了什么时，读 SASS</h2>
+    <div class="code-block">
+      <span class="inst">HGMMA.MMA</span>      <span class="comment">// Hopper tensor 路径</span><br>
+      <span class="inst">UTMALDG</span>        <span class="comment">// TMA 批量传输</span><br>
+      <span class="inst">STL / LDL</span>      <span class="comment">// 机器路径中的 local store/load</span><br>
+      <span class="inst-blue">ARRIVES</span>         <span class="comment">// 异步协调</span>
+    </div>
+    <div class="traits">
+      <div class="trait-box">
+        <h3>适合用于</h3>
+        <p>原生 opcode、目标架构特定行为、真实的机器指令词汇、架构漂移检测。</p>
+      </div>
+      <div class="trait-box">
+        <h3>需要注意</h3>
+        <p>更难阅读、架构强相关、文档不完整，且仍然不能替代 profiling。</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="correlation">
+  <div class="cor-label">关联层 — PTX 与 SASS 的交叉验证</div>
+  <div class="cor-grid">
+    <div class="cor-item">
+      PTX 中的 <code>mma.sync</code> 对应 SASS 中的 <code>HMMA</code>，说明后端兑现了 tensor-core 意图。
+    </div>
+    <div class="cor-item">
+      PTX 中的 <code>st.local</code> 对应 SASS 中的 <code>STL/LDL</code>，说明 local memory 流量存活到了机器路径中。
+    </div>
+    <div class="cor-item">
+      PTX 中的警告如果没有 SASS 的确认，只是假设；PTX + SASS 联合验证才是更强的执行结构发现。
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

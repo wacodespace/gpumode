@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SGLang --kv-cache-dtype fp8_e4m3 调用链路</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: #0d1117;
+    color: #c9d1d9;
+    padding: 40px 20px;
+    line-height: 1.6;
+  }
+  .container { max-width: 1100px; margin: 0 auto; }
+  h1 {
+    text-align: center;
+    font-size: 28px;
+    color: #58a6ff;
+    margin-bottom: 8px;
+  }
+  .subtitle {
+    text-align: center;
+    color: #8b949e;
+    font-size: 14px;
+    margin-bottom: 40px;
+  }
+  .chain { position: relative; }
+
+  /* 连接线 */
+  .chain::before {
+    content: '';
+    position: absolute;
+    left: 36px;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: linear-gradient(to bottom, #58a6ff, #3fb950, #d29922, #f85149);
+    border-radius: 2px;
+  }
+
+  .step {
+    position: relative;
+    margin-bottom: 32px;
+    padding-left: 80px;
+  }
+
+  .step-number {
+    position: absolute;
+    left: 18px;
+    top: 12px;
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 16px;
+    color: #0d1117;
+    z-index: 2;
+  }
+
+  .step:nth-child(1) .step-number { background: #58a6ff; }
+  .step:nth-child(2) .step-number { background: #79c0ff; }
+  .step:nth-child(3) .step-number { background: #56d364; }
+  .step:nth-child(4) .step-number { background: #3fb950; }
+  .step:nth-child(5) .step-number { background: #d29922; }
+  .step:nth-child(6) .step-number { background: #e3b341; }
+  .step:nth-child(7) .step-number { background: #f0883e; }
+  .step:nth-child(8) .step-number { background: #f85149; }
+
+  .card {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 10px;
+    padding: 20px 24px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  .card:hover {
+    border-color: #58a6ff;
+    box-shadow: 0 0 20px rgba(88, 166, 255, 0.1);
+  }
+
+  .card-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  .card-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: #f0f6fc;
+  }
+  .card-tag {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .tag-cli { background: #1f3a5f; color: #58a6ff; }
+  .tag-parse { background: #1a3a2a; color: #3fb950; }
+  .tag-init { background: #3a2a1a; color: #d29922; }
+  .tag-mem { background: #3a1a1a; color: #f85149; }
+  .tag-attn { background: #2d1a3a; color: #bc8cff; }
+  .tag-quant { background: #3a2a1a; color: #f0883e; }
+
+  .file-path {
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 12px;
+    color: #8b949e;
+    margin-bottom: 10px;
+    word-break: break-all;
+  }
+  .file-path .line-num { color: #d29922; }
+
+  .desc {
+    font-size: 14px;
+    color: #c9d1d9;
+    margin-bottom: 12px;
+  }
+
+  .code-block {
+    background: #0d1117;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    padding: 14px 16px;
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 13px;
+    line-height: 1.5;
+    overflow-x: auto;
+    color: #c9d1d9;
+  }
+  .code-block .kw { color: #ff7b72; }
+  .code-block .str { color: #a5d6ff; }
+  .code-block .fn { color: #d2a8ff; }
+  .code-block .cm { color: #8b949e; }
+  .code-block .var { color: #ffa657; }
+  .code-block .cls { color: #79c0ff; }
+  .code-block .num { color: #79c0ff; }
+  .code-block .hl { background: rgba(88, 166, 255, 0.15); display: inline; padding: 1px 0; }
+
+  .arrow-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-left: 80px;
+    margin: -16px 0 16px 0;
+    font-size: 12px;
+    color: #8b949e;
+  }
+  .arrow-label .arrow {
+    color: #484f58;
+    font-size: 18px;
+  }
+
+  .detail-toggle {
+    margin-top: 10px;
+  }
+  .detail-toggle summary {
+    cursor: pointer;
+    font-size: 13px;
+    color: #58a6ff;
+    outline: none;
+    user-select: none;
+  }
+  .detail-toggle summary:hover { text-decoration: underline; }
+  .detail-content {
+    margin-top: 8px;
+    font-size: 13px;
+    color: #8b949e;
+    padding-left: 12px;
+    border-left: 2px solid #30363d;
+  }
+  .detail-content p { margin-bottom: 6px; }
+  .detail-content code {
+    background: #0d1117;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 12px;
+    color: #c9d1d9;
+  }
+
+  .legend {
+    margin-top: 40px;
+    padding: 20px;
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 10px;
+  }
+  .legend h3 {
+    color: #f0f6fc;
+    margin-bottom: 12px;
+    font-size: 16px;
+  }
+  .legend-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 8px;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+  }
+  .legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .summary-box {
+    margin-top: 32px;
+    padding: 20px 24px;
+    background: linear-gradient(135deg, #161b22, #1a2332);
+    border: 1px solid #30363d;
+    border-radius: 10px;
+  }
+  .summary-box h3 {
+    color: #58a6ff;
+    margin-bottom: 12px;
+    font-size: 16px;
+  }
+  .summary-box p {
+    font-size: 14px;
+    margin-bottom: 8px;
+  }
+  .summary-box code {
+    background: #0d1117;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 12px;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>--kv-cache-dtype fp8_e4m3 调用链路</h1>
+  <p class="subtitle">SGLang 推理框架中 KV Cache FP8 量化参数的完整数据流</p>
+
+  <div class="chain">
+
+    <!-- Step 1: CLI 参数定义 -->
+    <div class="step">
+      <div class="step-number">1</div>
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">CLI 参数定义与注册</span>
+          <span class="card-tag tag-cli">CLI</span>
+        </div>
+        <div class="file-path">
+          sglang/srt/server_args.py:<span class="line-num">315</span>,
+          <span class="line-num">3080-3085</span>
+        </div>
+        <div class="desc">
+          <code>--kv-cache-dtype</code> 作为命令行参数在 <code>ServerArgs</code> 数据类中定义，默认值为 <code>"auto"</code>。
+          argparse 注册时通过 <code>choices</code> 限制合法值。
+        </div>
+        <div class="code-block">
+<span class="cm"># 数据类字段定义 (L315)</span>
+<span class="kw">class</span> <span class="cls">ServerArgs</span>:
+    <span class="var">kv_cache_dtype</span>: <span class="cls">str</span> = <span class="str">"auto"</span>
+
+<span class="cm"># argparse 注册 (L3080-3085)</span>
+parser.<span class="fn">add_argument</span>(
+    <span class="str">"--kv-cache-dtype"</span>,
+    <span class="kw">type</span>=<span class="cls">str</span>,
+    <span class="kw">default</span>=ServerArgs.kv_cache_dtype,
+    <span class="hl">choices=[<span class="str">"auto"</span>, <span class="str">"fp8_e5m2"</span>, <span class="str">"fp8_e4m3"</span>, <span class="str">"bf16"</span>, <span class="str">"bfloat16"</span>, <span class="str">"fp4_e2m1"</span>]</span>,
+)
+        </div>
+        <details class="detail-toggle">
+          <summary>用户传入的值如何到达这里？</summary>
+          <div class="detail-content">
+            <p>用户执行 <code>python -m sglang.launch_server --kv-cache-dtype fp8_e4m3 ...</code></p>
+            <p><code>launch_server.py:32</code> 调用 <code>prepare_server_args(sys.argv[1:])</code>，内部用 argparse 解析命令行，生成 <code>ServerArgs</code> 实例。</p>
+            <p>此时 <code>server_args.kv_cache_dtype == "fp8_e4m3"</code>（字符串形式）。</p>
+          </div>
+        </details>
+      </div>
+    </div>
+
+    <div class="arrow-label"><span class="arrow">↓</span> ServerArgs 实例传入 Engine → Scheduler → ModelRunner</div>
+
+    <!-- Step 2: 服务启动入口 -->
+    <div class="step">
+      <div class="step-number">2</div>
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">服务启动 → ModelRunner 初始化</span>
+          <span class="card-tag tag-init">INIT</span>
+        </div>
+        <div class="file-path">
+          sglang/launch_server.py:<span class="line-num">32</span> →
+          sglang/srt/model_executor/model_runner.py:<span class="line-num">587</span>
+        </div>
+        <div class="desc">
+          <code>launch_server</code> 创建 <code>ServerArgs</code> 后启动 HTTP 服务。
+          Engine 内部启动 Scheduler，Scheduler 创建 <code>ModelRunner</code>。
+          ModelRunner 初始化时依次执行三个关键步骤：
+        </div>
+        <div class="code-block">
+<span class="cm"># ModelRunner.__init__() 中的关键初始化序列 (L586-611)</span>
+
+<span class="cm"># ① 推导 KV Cache 的 torch dtype</span>
+self.<span class="fn">configure_kv_cache_dtype</span>()       <span class="cm"># L587</span>
+
+<span class="cm"># ② 初始化 GPU 显存池</span>
+self.<span class="fn">init_memory_pool</span>(min_per_gpu_memory) <span class="cm"># L590</span>
+
+<span class="cm"># ③ 初始化 Attention 后端</span>
+self.<span class="fn">init_attention_backend</span>()            <span class="cm"># L607-616</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="arrow-label"><span class="arrow">↓</span> 字符串 "fp8_e4m3" → torch.float8_e4m3fn</div>
+
+    <!-- Step 3: dtype 转换 -->
+    <div class="step">
+      <div class="step-number">3</div>
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">KV Cache dtype 推导与转换</span>
+          <span class="card-tag tag-parse">PARSE</span>
+        </div>
+        <div class="file-path">
+          sglang/srt/model_executor/model_runner.py:<span class="line-num">1669-1715</span>
+        </div>
+        <div class="desc">
+          <code>configure_kv_cache_dtype()</code> 将字符串参数映射为 PyTorch 的 torch.dtype。
+          对于 <code>"fp8_e4m3"</code>，在 NVIDIA GPU 上映射为 <code>torch.float8_e4m3fn</code>，
+          在 AMD GPU (HIP) 上映射为平台原生 FP8 格式。
+        </div>
+        <div class="code-block">
+<span class="kw">def</span> <span class="fn">configure_kv_cache_dtype</span>(self):
+    <span class="kw">if</span> self.server_args.kv_cache_dtype == <span class="str">"auto"</span>:
+        <span class="cm"># 检查模型量化配置，或回退到模型 dtype</span>
+        quant_config = <span class="fn">getattr</span>(self.model, <span class="str">"quant_config"</span>, <span class="cls">None</span>)
+        ...
+    <span class="kw">elif</span> self.server_args.kv_cache_dtype == <span class="str">"fp8_e4m3"</span>:
+        <span class="kw">if</span> _is_hip:
+            <span class="hl">self.kv_cache_dtype = fp8_dtype  <span class="cm"># AMD 原生格式</span></span>
+        <span class="kw">else</span>:
+            <span class="hl">self.kv_cache_dtype = torch.float8_e4m3fn  <span class="cm"># NVIDIA</span></span>
+    ...
+    log_info_on_rank0(logger, <span class="str">f"Using KV cache dtype: </span>{self.kv_cache_dtype}<span class="str">"</span>)
+        </div>
+        <details class="detail-toggle">
+          <summary>"auto" 模式的推导逻辑</summary>
+          <div class="detail-content">
+            <p>当 <code>kv_cache_dtype == "auto"</code> 时，会检查模型的 <code>quant_config.kv_cache_quant_algo</code>。</p>
+            <p>如果模型自带 FP8 KV Cache 量化配置（如某些 checkpoint 内置），则自动使用 FP8；否则回退到模型自身的 dtype（通常为 bf16）。</p>
+          </div>
+        </details>
+      </div>
+    </div>
+
+    <div class="arrow-label"><span class="arrow">↓</span> self.kv_cache_dtype (torch.float8_e4m3fn) 传入显存池</div>
+
+    <!-- Step 4: KV Scale 加载 -->
+    <div class="step">
+      <div class="step-number">4</div>
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">FP8 KV Cache 缩放因子加载</span>
+          <span class="card-tag tag-quant">QUANT</span>
+        </div>
+        <div class="file-path">
+          sglang/srt/model_executor/model_runner.py:<span class="line-num">997-1018</span><br>
+          sglang/srt/layers/quantization/kv_cache.py:<span class="line-num">16-81</span><br>
+          sglang/srt/layers/radix_attention.py:<span class="line-num">83-92</span>
+        </div>
+        <div class="desc">
+          FP8 量化需要 <code>k_scale</code> / <code>v_scale</code> 缩放因子。
+          <code>RadixAttention</code> 层通过 <code>BaseKVCacheMethod</code> 注册这些参数，
+          ModelRunner 在模型加载完成后尝试从 checkpoint 读取。
+        </div>
+        <div class="code-block">
+<span class="cm"># RadixAttention 初始化 (radix_attention.py:83-92)</span>
+self.<span class="var">k_scale</span> = <span class="cls">None</span>
+self.<span class="var">v_scale</span> = <span class="cls">None</span>
+<span class="kw">if</span> quant_config <span class="kw">is not</span> <span class="cls">None</span>:
+    self.quant_method = quant_config.<span class="fn">get_quant_method</span>(self)
+    self.quant_method.<span class="fn">create_weights</span>(self)  <span class="cm"># 注册 k_scale, v_scale 参数</span>
+
+<span class="cm"># BaseKVCacheMethod.create_weights() (kv_cache.py:30-42)</span>
+layer.<span class="var">k_scale</span> = nn.<span class="cls">Parameter</span>(torch.<span class="fn">tensor</span>(<span class="num">-1.0</span>))  <span class="cm"># 初始值 -1.0 (无效标记)</span>
+layer.<span class="var">v_scale</span> = nn.<span class="cls">Parameter</span>(torch.<span class="fn">tensor</span>(<span class="num">-1.0</span>))
+
+<span class="cm"># ModelRunner 加载后处理 (model_runner.py:997-1018)</span>
+<span class="kw">if</span> self.server_args.kv_cache_dtype == <span class="str">"fp8_e4m3"</span>:
+    <span class="kw">if</span> self.server_args.quantization_param_path <span class="kw">is not</span> <span class="cls">None</span>:
+        self.model.<span class="fn">load_kv_cache_scales</span>(...)  <span class="cm"># 从文件加载缩放因子</span>
+    <span class="kw">else</span>:
+        <span class="hl">logger.<span class="fn">warning</span>(<span class="str">"Defaulting to scaling factors of 1.0"</span>)</span>
+        </div>
+        <details class="detail-toggle">
+          <summary>缩放因子的后处理逻辑</summary>
+          <div class="detail-content">
+            <p><code>BaseKVCacheMethod.process_weights_after_loading()</code> 执行以下逻辑：</p>
+            <p>• 如果 checkpoint 中有 <code>k_scale</code> 和 <code>v_scale</code>（值 > 0），直接使用。</p>
+            <p>• 如果都是初始值 -1.0（没有加载到），默认设为 1.0。</p>
+            <p>• AMD ROCm 平台会额外乘 2 (<code>is_fp8_fnuz</code>)。</p>
+            <p>• 最终 <code>layer.k_scale_float</code> 和 <code>layer.v_scale_float</code> 是 Python float，用于 attention kernel 的 descale。</p>
+          </div>
+        </details>
+      </div>
+    </div>
+
+    <div class="arrow-label"><span class="arrow">↓</span> dtype=torch.float8_e4m3fn 用于分配 GPU 显存</div>
+
+    <!-- Step 5: Memory Pool 分配 -->
+    <div class="step">
+      <div class="step-number">5</div>
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">KV Cache 显存池分配</span>
+          <span class="card-tag tag-mem">MEMORY</span>
+        </div>
+        <div class="file-path">
+          sglang/srt/model_executor/model_runner_kv_cache_mixin.py:<span class="line-num">46-114</span>, <span class="line-num">470-640</span><br>
+          sglang/srt/mem_cache/memory_pool.py:<span class="line-num">616-622</span>, <span class="line-num">697-848</span>
+        </div>
+        <div class="desc">
+          <code>init_memory_pool()</code> 首先用 <code>get_cell_size_per_token()</code> 计算每个 token 的 KV Cache 显存占用（FP8 = 1字节/元素），
+          然后据此计算最大可容纳的 token 数量，最后创建实际的 <code>MHATokenToKVPool</code>。
+        </div>
+        <div class="code-block">
+<span class="cm"># 每 token 显存计算 (kv_cache_mixin.py:47-48)</span>
+kv_size = torch._utils.<span class="fn">_element_size</span>(self.kv_cache_dtype)  <span class="cm"># fp8 → 1 byte</span>
+cell_size = num_kv_heads * (head_dim + v_head_dim) * num_layers * kv_size
+
+<span class="cm"># KVCache 基类：FP8 特殊存储 (memory_pool.py:618-622)</span>
+<span class="kw">if</span> dtype <span class="kw">in</span> (torch.float8_e5m2, torch.float8_e4m3fn):
+    <span class="hl">self.store_dtype = torch.uint8  <span class="cm"># 因为 index_put 不支持 fp8</span></span>
+<span class="kw">else</span>:
+    self.store_dtype = dtype
+
+<span class="cm"># MHATokenToKVPool 分配 buffer (memory_pool.py:810-824)</span>
+self.k_buffer = [
+    torch.<span class="fn">zeros</span>(
+        (size + page_size, head_num, head_dim),
+        <span class="hl">dtype=self.store_dtype</span>,  <span class="cm"># torch.uint8 (FP8 bit pattern)</span>
+        device=device,
+    )
+    <span class="kw">for</span> _ <span class="kw">in</span> <span class="fn">range</span>(layer_num)
+]
+<span class="cm"># v_buffer 同理</span>
+        </div>
+        <details class="detail-toggle">
+          <summary>为什么用 uint8 而不是直接用 float8？</summary>
+          <div class="detail-content">
+            <p>PyTorch 的 <code>Tensor.index_put</code> 操作不支持 <code>torch.float8_e4m3fn</code> 类型。</p>
+            <p>所以 SGLang 将 KV Cache buffer 分配为 <code>torch.uint8</code>（与 FP8 同为 1 字节），
+              存取时通过 <code>.view(dtype)</code> 在 uint8 和 float8 之间零拷贝转换。</p>
+            <p>读取时：<code>k_buffer[layer_id].view(self.dtype)</code> → 得到 float8 视图。</p>
+            <p>写入时：<code>cache_k.view(self.store_dtype)</code> → 转为 uint8 后存入。</p>
+          </div>
+        </details>
+      </div>
+    </div>
+
+    <div class="arrow-label"><span class="arrow">↓</span> pool 创建完成，初始化 attention 后端</div>
+
+    <!-- Step 6: Attention Backend -->
+    <div class="step">
+      <div class="step-number">6</div>
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Attention Backend 初始化与分发</span>
+          <span class="card-tag tag-attn">ATTENTION</span>
+        </div>
+        <div class="file-path">
+          sglang/srt/model_executor/model_runner.py:<span class="line-num">1726-1799</span><br>
+          sglang/srt/layers/attention/attention_registry.py:<span class="line-num">91-106</span><br>
+          sglang/srt/layers/attention/flashattention_backend.py:<span class="line-num">348-349</span>
+        </div>
+        <div class="desc">
+          <code>init_attention_backend()</code> 根据 <code>--attention-backend</code>（本例为 <code>"triton"</code>）
+          从注册表 <code>ATTENTION_BACKENDS</code> 中查找对应工厂函数，创建后端实例。
+          后端在初始化时保存 <code>kv_cache_dtype</code> 以便后续在 forward 中使用。
+        </div>
+        <div class="code-block">
+<span class="cm"># 注册表机制 (attention_registry.py:91-106)</span>
+<span class="kw">@register_attention_backend</span>(<span class="str">"triton"</span>)
+<span class="kw">def</span> <span class="fn">create_triton_backend</span>(runner):
+    <span class="kw">from</span> ...triton_backend <span class="kw">import</span> <span class="cls">TritonAttnBackend</span>
+    <span class="kw">return</span> <span class="cls">TritonAttnBackend</span>(runner)
+
+<span class="cm"># Backend 保存 dtype 信息 (flashattention_backend.py:348-349)</span>
+self.<span class="var">kv_cache_dtype</span> = model_runner.kv_cache_dtype       <span class="cm"># torch.float8_e4m3fn</span>
+self.<span class="var">kv_cache_dtype_str</span> = model_runner.server_args.kv_cache_dtype  <span class="cm"># "fp8_e4m3"</span>
+
+<span class="cm"># 分发逻辑 (model_runner.py:1792-1798)</span>
+<span class="kw">def</span> <span class="fn">_get_attention_backend_from_str</span>(self, backend_str, ...):
+    full_attention_backend = <span class="hl">ATTENTION_BACKENDS[backend_str](self)</span>
+    <span class="kw">return</span> <span class="fn">attn_backend_wrapper</span>(self, full_attention_backend)
+        </div>
+      </div>
+    </div>
+
+    <div class="arrow-label"><span class="arrow">↓</span> 推理请求到达，进入 forward 路径</div>
+
+    <!-- Step 7: forward 中写入 KV Cache -->
+    <div class="step">
+      <div class="step-number">7</div>
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Forward: KV Cache 写入 (FP8 量化)</span>
+          <span class="card-tag tag-quant">QUANT</span>
+          <span class="card-tag tag-mem">WRITE</span>
+        </div>
+        <div class="file-path">
+          sglang/srt/layers/radix_attention.py:<span class="line-num">99-135</span><br>
+          sglang/srt/layers/attention/flashattention_backend.py:<span class="line-num">750-758</span><br>
+          sglang/srt/mem_cache/memory_pool.py:<span class="line-num">951-988</span>
+        </div>
+        <div class="desc">
+          每一层 Transformer 的 attention forward 中，新计算出的 K、V 会被写入 KV Cache。
+          <code>set_kv_buffer()</code> 执行 FP8 量化：先用 <code>k_scale</code> 缩放，再 <code>.to(fp8)</code> 转换。
+        </div>
+        <div class="code-block">
+<span class="cm"># RadixAttention.forward() → attn_backend.forward()</span>
+<span class="cm"># → FlashAttentionBackend.forward_extend() (L750-758)</span>
+<span class="kw">if</span> save_kv_cache:
+    cache_loc = forward_batch.out_cache_loc
+    forward_batch.token_to_kv_pool.<span class="fn">set_kv_buffer</span>(
+        layer, cache_loc, k, v, <span class="hl">layer.k_scale, layer.v_scale</span>
+    )
+
+<span class="cm"># MHATokenToKVPool.set_kv_buffer() (memory_pool.py:951-988)</span>
+<span class="kw">def</span> <span class="fn">set_kv_buffer</span>(self, layer, loc, cache_k, cache_v, k_scale, v_scale):
+    <span class="kw">if</span> cache_k.dtype != self.dtype:  <span class="cm"># bf16 != fp8 → 需要量化</span>
+        <span class="hl"><span class="kw">if</span> k_scale <span class="kw">is not</span> <span class="cls">None</span>: cache_k.<span class="fn">div_</span>(k_scale)</span>  <span class="cm"># 缩放</span>
+        <span class="hl"><span class="kw">if</span> v_scale <span class="kw">is not</span> <span class="cls">None</span>: cache_v.<span class="fn">div_</span>(v_scale)</span>
+        <span class="hl">cache_k = cache_k.<span class="fn">to</span>(self.dtype)</span>       <span class="cm"># bf16 → fp8_e4m3</span>
+        <span class="hl">cache_v = cache_v.<span class="fn">to</span>(self.dtype)</span>
+
+    <span class="kw">if</span> self.store_dtype != self.dtype:   <span class="cm"># fp8 → uint8 视图转换</span>
+        cache_k = cache_k.<span class="fn">view</span>(self.store_dtype)
+        cache_v = cache_v.<span class="fn">view</span>(self.store_dtype)
+
+    <span class="fn">_set_kv_buffer_impl</span>(cache_k, cache_v, self.k_buffer[...], ...)
+        </div>
+        <details class="detail-toggle">
+          <summary>量化的数学操作</summary>
+          <div class="detail-content">
+            <p>写入时的量化公式：<code>cache_fp8 = (cache_bf16 / scale).to(fp8)</code></p>
+            <p>• <code>div_(k_scale)</code>：将 bf16 的 K 值除以缩放因子，映射到 FP8 的表示范围</p>
+            <p>• <code>.to(torch.float8_e4m3fn)</code>：PyTorch 原生的类型转换，截断到 FP8 精度</p>
+            <p>• <code>.view(torch.uint8)</code>：零拷贝的位模式重解释，便于 index_put 写入 buffer</p>
+          </div>
+        </details>
+      </div>
+    </div>
+
+    <div class="arrow-label"><span class="arrow">↓</span> KV Cache (FP8) 存好后，计算 attention</div>
+
+    <!-- Step 8: forward 中读取 KV Cache (反量化) -->
+    <div class="step">
+      <div class="step-number">8</div>
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Forward: Attention 计算 (FP8 反量化)</span>
+          <span class="card-tag tag-attn">ATTENTION</span>
+          <span class="card-tag tag-quant">DEQUANT</span>
+        </div>
+        <div class="file-path">
+          sglang/srt/layers/attention/flashattention_backend.py:<span class="line-num">778-794</span>, <span class="line-num">1139-1150</span><br>
+          sglang/srt/mem_cache/memory_pool.py:<span class="line-num">925-940</span>
+        </div>
+        <div class="desc">
+          从 KV Cache 读取时，buffer 的 uint8 视图被重新解释为 fp8。
+          FlashAttention 内核直接接受 FP8 的 KV 和 descale 参数，在 kernel 内部完成反量化计算。
+          Query 也被转为 FP8 以匹配 kernel 要求。
+        </div>
+        <div class="code-block">
+<span class="cm"># 读取 KV Cache (memory_pool.py:925-940)</span>
+<span class="kw">def</span> <span class="fn">_get_key_buffer</span>(self, layer_id):
+    <span class="kw">if</span> self.store_dtype != self.dtype:   <span class="cm"># uint8 → fp8 视图</span>
+        <span class="kw">return</span> self.k_buffer[layer_id].<span class="fn">view</span>(self.dtype)
+    <span class="kw">return</span> self.k_buffer[layer_id]
+
+<span class="cm"># Attention 计算 — 以 extend 为例 (flashattention_backend.py:783-794)</span>
+<span class="kw">if</span> self.kv_cache_dtype_str != <span class="str">"auto"</span> <span class="kw">and</span> layer.head_dim &lt;= <span class="num">256</span>:
+    <span class="kw">if</span> layer.k_scale <span class="kw">is not</span> <span class="cls">None</span>:
+        descale_shape = (batch_size, layer.tp_k_head_num)
+        <span class="hl">k_descale = layer.k_scale.<span class="fn">expand</span>(descale_shape)</span>  <span class="cm"># descale 因子</span>
+        <span class="hl">v_descale = layer.v_scale.<span class="fn">expand</span>(descale_shape)</span>
+    <span class="hl">q = q.<span class="fn">to</span>(self.kv_cache_dtype)</span>  <span class="cm"># query 也转为 fp8</span>
+
+<span class="cm"># 传入 FlashAttention kernel</span>
+<span class="fn">flash_attn_with_kvcache</span>(
+    q=q, k_cache=key_cache, v_cache=value_cache,
+    <span class="hl">k_descale=k_descale, v_descale=v_descale</span>,  <span class="cm"># kernel 内部反量化</span>
+    ...
+)
+        </div>
+        <details class="detail-toggle">
+          <summary>kernel 内部如何处理 FP8？</summary>
+          <div class="detail-content">
+            <p>FlashAttention v3 (Hopper架构) 原生支持 FP8 输入：</p>
+            <p>• K/V 以 FP8 格式直接从 HBM 加载到 SRAM，减少一半显存带宽</p>
+            <p>• kernel 接收 <code>k_descale</code> 和 <code>v_descale</code> 参数</p>
+            <p>• 在 SRAM 中进行矩阵乘法前，将 FP8 值乘以 descale 因子恢复到真实值</p>
+            <p>• 最终输出仍为 bf16/fp16 精度</p>
+            <p>注意：当 <code>head_dim > 256</code> 或使用 FA4 时，不使用 FP8 kernel 路径。</p>
+          </div>
+        </details>
+      </div>
+    </div>
+
+  </div><!-- end .chain -->
+
+  <!-- 总结 -->
+  <div class="summary-box">
+    <h3>数据流总结</h3>
+    <p><strong>完整类型变换链：</strong></p>
+    <div class="code-block" style="margin: 12px 0;">
+CLI <span class="str">"fp8_e4m3"</span>
+  → ServerArgs.<span class="var">kv_cache_dtype</span> = <span class="str">"fp8_e4m3"</span>           <span class="cm">(str)</span>
+    → ModelRunner.<span class="var">kv_cache_dtype</span> = torch.float8_e4m3fn  <span class="cm">(torch.dtype)</span>
+      → KVCache.<span class="var">dtype</span> = torch.float8_e4m3fn             <span class="cm">(逻辑类型)</span>
+      → KVCache.<span class="var">store_dtype</span> = torch.uint8               <span class="cm">(存储类型，绕过 index_put 限制)</span>
+        → k_buffer / v_buffer  [num_tokens, num_heads, head_dim] × num_layers  <span class="cm">(GPU 显存)</span>
+
+写入: bf16 K/V → <span class="fn">div_(scale)</span> → <span class="fn">.to(fp8)</span> → <span class="fn">.view(uint8)</span> → buffer
+读取: buffer → <span class="fn">.view(fp8)</span> → FA kernel + descale → bf16 output
+    </div>
+    <p><strong>关键优势：</strong>FP8 KV Cache 将每个元素从 2 字节 (bf16) 压缩到 1 字节，
+      显存占用减半，意味着同等显存下可以支撑约 2x 的 context length 或并发请求数。</p>
+  </div>
+
+  <!-- 图例 -->
+  <div class="legend">
+    <h3>涉及的核心文件</h3>
+    <div class="legend-grid">
+      <div class="legend-item">
+        <div class="legend-dot" style="background:#58a6ff"></div>
+        <span><code>server_args.py</code> — CLI 参数定义与解析</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background:#56d364"></div>
+        <span><code>model_runner.py</code> — dtype 转换 / 后端初始化</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background:#d29922"></div>
+        <span><code>model_runner_kv_cache_mixin.py</code> — 显存计算与 pool 创建</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background:#f85149"></div>
+        <span><code>memory_pool.py</code> — buffer 分配 / FP8 量化写入读取</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background:#bc8cff"></div>
+        <span><code>attention_registry.py</code> — Attention 后端注册表</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background:#f0883e"></div>
+        <span><code>flashattention_backend.py</code> — FA3 FP8 kernel 分发</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background:#ffa657"></div>
+        <span><code>kv_cache.py</code> — k_scale / v_scale 管理</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background:#79c0ff"></div>
+        <span><code>radix_attention.py</code> — Attention 层入口</span>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

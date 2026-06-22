@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NCU 剖析运行时，PTX/SASS 审计 Lowering</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: #fafafa;
+  color: #1a1a1a;
+  padding: 3rem 2rem;
+  max-width: 1300px;
+  margin: 0 auto;
+}
+.label {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid #ccc;
+  margin-bottom: 0.8rem;
+}
+.label--blue { color: #4a6fa5; border-color: #4a6fa5; }
+.label--gold { color: #8b6914; border-color: #d4a843; }
+h1 {
+  font-size: 2rem;
+  font-weight: 800;
+  margin-bottom: 0.5rem;
+}
+.subtitle {
+  font-size: 0.92rem;
+  color: #666;
+  margin-bottom: 2.5rem;
+}
+
+/* main table */
+.compare-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 2rem;
+  font-size: 0.85rem;
+}
+.compare-table thead th {
+  text-align: left;
+  padding: 0.8rem 1rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #888;
+  border-bottom: 2px solid #ccc;
+  background: #f5f5f0;
+}
+.compare-table thead th:first-child {
+  width: 22%;
+}
+.compare-table tbody td {
+  padding: 1rem;
+  border-bottom: 1px solid #e8e8e8;
+  vertical-align: top;
+  line-height: 1.6;
+  color: #555;
+}
+.compare-table tbody td:first-child {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #1a1a1a;
+  vertical-align: middle;
+}
+.compare-table tbody td:nth-child(2) {
+  background: #fafafa;
+}
+.compare-table tbody td:nth-child(3) {
+  background: #f9f9f6;
+}
+.compare-table tbody td:last-child {
+  color: #8b6914;
+  font-weight: 500;
+  font-size: 0.83rem;
+}
+.compare-table code {
+  background: #f0f0e8;
+  padding: 0.1rem 0.35rem;
+  font-size: 0.78rem;
+}
+.compare-table .kw {
+  color: #c0392b;
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-weight: 600;
+  font-size: 0.8rem;
+}
+
+/* bottom bar */
+.bottom-bar {
+  border: 1px solid #e0e0e0;
+  border-left: 4px solid #8b6914;
+  background: #fff;
+  padding: 1rem 1.5rem;
+  font-size: 0.9rem;
+  color: #333;
+  line-height: 1.6;
+  margin-bottom: 2.5rem;
+}
+
+/* summary */
+.summary {
+  border: 1px solid #e0e0e0;
+  border-top: 3px solid #4a6fa5;
+  background: #fff;
+  padding: 2rem;
+}
+.summary h2 {
+  font-size: 1.3rem;
+  font-weight: 700;
+  margin-bottom: 1.2rem;
+  color: #2c3e50;
+}
+.summary-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+.insight {
+  border: 1px solid #e8e8e3;
+  padding: 1.2rem 1.5rem;
+  background: #f9f9f6;
+}
+.insight h3 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+.insight p {
+  font-size: 0.82rem;
+  color: #555;
+  line-height: 1.7;
+  margin-bottom: 0.5rem;
+}
+.insight p:last-child { margin-bottom: 0; }
+.takeaway {
+  border: 1px solid #e0e0e0;
+  border-left: 4px solid #4a6fa5;
+  background: #f5f8fb;
+  padding: 1.2rem 1.5rem;
+}
+.takeaway h3 {
+  font-size: 1rem;
+  font-weight: 700;
+  margin-bottom: 0.6rem;
+}
+.takeaway p {
+  font-size: 0.85rem;
+  color: #555;
+  line-height: 1.7;
+  margin-bottom: 0.6rem;
+}
+.takeaway p:last-child { margin-bottom: 0; }
+.workflow-chain {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0;
+  margin: 1rem 0;
+}
+.wf-step {
+  padding: 0.6rem 0.5rem;
+  text-align: center;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  border: 1px solid #e0e0e0;
+}
+.wf-step .wf-name {
+  font-weight: 700;
+  margin-bottom: 0.2rem;
+}
+.wf-step .wf-tool { color: #888; }
+.wf-step--ncu { background: #f0f5fa; }
+.wf-step--ptx { background: #f9f6f0; }
+.wf-step--both { background: #f0faf0; }
+
+@media (max-width: 900px) {
+  .compare-table { font-size: 0.78rem; }
+  .summary-grid { grid-template-columns: 1fr; }
+  .workflow-chain { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<h1>NCU 剖析运行时，PTX/SASS 审计 Lowering。</h1>
+<p class="subtitle">目的不是替代测量，而是解释测量到的开销是由什么造成的。</p>
+
+<table class="compare-table">
+  <thead>
+    <tr>
+      <th>问题</th>
+      <th>NCU / Profiler</th>
+      <th>PTX/SASS 审查</th>
+      <th>为什么重要</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Kernel 慢吗？</td>
+      <td>能回答：timing、stall、occupancy、带宽、tensor 利用率。</td>
+      <td>不能回答：静态结构无法证明运行时开销。</td>
+      <td>NCU 是测量权威。</td>
+    </tr>
+    <tr>
+      <td>开销来自哪里？</td>
+      <td>间接：通过症状和指令/计数器混合推断。</td>
+      <td>直接：opcode、地址空间、向量宽度、barrier、spill、回退路径。</td>
+      <td>这是源码和测量之间缺失的那一层。</td>
+    </tr>
+    <tr>
+      <td>原生路径落地了吗？</td>
+      <td>间接：低利用率或管线压力可能暗示。</td>
+      <td>直接：查找 <span class="kw">WGMMA</span>、<span class="kw">HGMMA</span>、<span class="kw">HMMA</span>、<span class="kw">UTMALDG</span>、<span class="kw">ARRIVES</span>。</td>
+      <td>架构迁移需要 target-path 审计。</td>
+    </tr>
+    <tr>
+      <td>Local 流量是 spill 路径吗？</td>
+      <td>展示 local-memory 流量和性能影响。</td>
+      <td>展示 <code>st.local</code>/<code>ld.local</code> 或 <code>STL</code>/<code>LDL</code>，以及在 kernel 中的位置。</td>
+      <td>静态证据定位编译器/lowering 产物。</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="bottom-bar">
+  <strong>NCU 测量执行在哪里付出了代价。PTX/SASS 审查帮助解释是哪些生成的结构造成了那个代价。</strong>
+</div>
+
+<!-- ============ Summary ============ -->
+<div class="summary">
+  <div class="label label--blue">总结与理解</div>
+  <h2>两个工具回答不同的问题</h2>
+
+  <div class="summary-grid">
+    <div class="insight">
+      <h3>NCU 回答 "What"，PTX/SASS 回答 "Why"</h3>
+      <p>NCU（Nsight Compute）告诉你<strong>发生了什么</strong>：这个 kernel 跑了多久、哪个管线饱和了、occupancy 多少、带宽利用率多少。但它不能告诉你<strong>为什么</strong>会这样——为什么 tensor core 利用率只有 30%？为什么 local memory 流量这么高？</p>
+      <p>PTX/SASS 审查填补这个空白：tensor core 利用率低可能是因为编译器回退到了 HMMA 而非 WGMMA；local memory 流量高是因为寄存器溢出生成了 <code>st.local</code>/<code>ld.local</code>。原因直接写在汇编里。</p>
+    </div>
+
+    <div class="insight">
+      <h3>表格第一行是最重要的边界声明</h3>
+      <p>"Kernel 慢吗？"这个问题 PTX/SASS 回答不了。你不能看着一段汇编就说"这很慢"——因为静态结构不等于运行时行为。一段看起来有 spill 的代码可能因为 cache 命中率高而跑得很快；一段看起来很干净的代码可能因为 bank conflict 而很慢。</p>
+      <p><strong>性能判断的权威永远是 profiler</strong>。PTX/SASS 的价值在于：当 profiler 告诉你"这里慢了"之后，帮你找到造成慢的那条编译器决策。</p>
+    </div>
+
+    <div class="insight">
+      <h3>"缺失的那一层"是这张 slide 的核心观点</h3>
+      <p>在没有 PTX/SASS 审查的工作流里，你有两端：源码（你写的）和 profiler 数据（你量的）。中间有一个黑盒——编译器做了什么决策？你只能猜。</p>
+      <p>PTX/SASS 打开了这个黑盒。你看到 NCU 报告 local memory traffic 很高 → 查 SASS 发现大量 <code>STL</code>/<code>LDL</code> → 定位到编译器把某些寄存器 spill 到了 local → 回到源码调整 tile size 减少寄存器压力。这条<strong>从测量到修复</strong>的路径，没有中间那层就断了。</p>
+    </div>
+
+    <div class="insight">
+      <h3>第三行揭示了架构迁移的实际工作流</h3>
+      <p>当你把 kernel 从 Ampere 迁移到 Hopper 时，NCU 可能显示"tensor core utilization 很低"。但这个信息不够：是因为没用上 WGMMA？还是用了但流水线没跑满？还是数据搬运成了瓶颈？</p>
+      <p>只有看 SASS 才能直接确认：有没有 <code>WGMMA</code>/<code>HGMMA</code> 指令？有没有 <code>UTMALDG</code>（TMA）？有没有 <code>ARRIVES</code>（mbarrier 同步）？如果这些都没有，说明编译器<strong>根本没有使用 Hopper 原生路径</strong>。</p>
+    </div>
+  </div>
+
+  <div class="takeaway">
+    <h3>实际的调优工作流：NCU 和 PTX/SASS 交替使用</h3>
+    <p>两个工具不是二选一，而是一个循环里的两个步骤：</p>
+    <div class="workflow-chain">
+      <div class="wf-step wf-step--ncu"><div class="wf-name">1. NCU 定位热点</div><div class="wf-tool">哪个 kernel 慢？</div></div>
+      <div class="wf-step wf-step--ptx"><div class="wf-name">2. SASS 诊断原因</div><div class="wf-tool">编译器做了什么？</div></div>
+      <div class="wf-step wf-step--both"><div class="wf-name">3. 修改源码/编译选项</div><div class="wf-tool">调 tile / pragma / flag</div></div>
+      <div class="wf-step wf-step--ptx"><div class="wf-name">4. SASS 确认改变</div><div class="wf-tool">结构变了吗？</div></div>
+      <div class="wf-step wf-step--ncu"><div class="wf-name">5. NCU 验证效果</div><div class="wf-tool">性能提升了吗？</div></div>
+    </div>
+    <p>注意步骤 4——在重新跑 profiler 之前，先看一眼 SASS 确认编译器的决策确实改变了。否则你可能改了源码，但编译器的 lowering 没变，profiler 结果当然也不会变。这一步能省掉很多无效的 profiling 循环。</p>
+  </div>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>读汇编不需要写汇编</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: #fafafa;
+  color: #1a1a1a;
+  padding: 3rem 2rem;
+  max-width: 1300px;
+  margin: 0 auto;
+}
+.label {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid #ccc;
+  margin-bottom: 0.8rem;
+}
+.label--red { color: #a04040; border-color: #c88; }
+.label--gold { color: #8b6914; border-color: #d4a843; }
+h1 {
+  font-size: 2.2rem;
+  font-weight: 800;
+  margin-bottom: 0.6rem;
+}
+.subtitle {
+  font-size: 0.95rem;
+  color: #666;
+  margin-bottom: 2.5rem;
+}
+.main-section {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+  margin-bottom: 1.5rem;
+}
+.intro-box {
+  border: 1px solid #e0e0e0;
+  border-left: 3px solid #ccc;
+  background: #fff;
+  padding: 2rem;
+}
+.intro-box h2 {
+  font-size: 1.3rem;
+  font-weight: 700;
+  margin-bottom: 1rem;
+}
+.intro-box p {
+  font-size: 0.88rem;
+  color: #555;
+  line-height: 1.7;
+  margin-bottom: 1.5rem;
+}
+.flow {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  margin-top: 0.5rem;
+}
+.flow-box {
+  flex: 1;
+  border: 1px solid #e0e0e0;
+  padding: 1rem;
+  background: #fafafa;
+}
+.flow-box .flow-title {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #888;
+  margin-bottom: 0.6rem;
+}
+.flow-box ul {
+  list-style: none;
+  font-size: 0.82rem;
+  color: #555;
+  line-height: 1.8;
+}
+.flow-arrow {
+  display: flex;
+  align-items: center;
+  padding: 0 0.6rem;
+  color: #bbb;
+  font-size: 1.2rem;
+}
+.right-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 1.2rem;
+}
+.card {
+  border: 1px solid #e0e0e0;
+  background: #fff;
+  padding: 1.3rem 1.5rem;
+}
+.card h3 {
+  font-size: 1rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+.card p {
+  font-size: 0.82rem;
+  color: #555;
+  line-height: 1.6;
+}
+.card--warn {
+  border-color: #c88;
+  border-left: 3px solid #a04040;
+}
+.summary {
+  margin-top: 2.5rem;
+  border: 1px solid #e0e0e0;
+  border-top: 3px solid #4a6fa5;
+  background: #fff;
+  padding: 2rem;
+}
+.summary h2 {
+  font-size: 1.3rem;
+  font-weight: 700;
+  margin-bottom: 1.2rem;
+  color: #2c3e50;
+}
+.summary-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+.insight {
+  border: 1px solid #e8e8e3;
+  padding: 1.2rem 1.5rem;
+  background: #f9f9f6;
+}
+.insight h3 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+.insight p {
+  font-size: 0.82rem;
+  color: #555;
+  line-height: 1.7;
+}
+.takeaway {
+  border: 1px solid #e0e0e0;
+  border-left: 4px solid #4a6fa5;
+  background: #f5f8fb;
+  padding: 1.2rem 1.5rem;
+}
+.takeaway h3 {
+  font-size: 1rem;
+  font-weight: 700;
+  margin-bottom: 0.6rem;
+}
+.takeaway p {
+  font-size: 0.85rem;
+  color: #555;
+  line-height: 1.7;
+  margin-bottom: 0.6rem;
+}
+.takeaway p:last-child { margin-bottom: 0; }
+.level-chain {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+.level-step {
+  background: #f5f5f0;
+  border: 1px solid #e0e0e0;
+  padding: 0.6rem;
+  text-align: center;
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+.level-step .level-name {
+  font-weight: 700;
+  margin-bottom: 0.2rem;
+}
+.level-step .level-desc {
+  color: #888;
+}
+.level-step--active {
+  background: #eef3f9;
+  border-color: #4a6fa5;
+}
+@media (max-width: 900px) {
+  .main-section { grid-template-columns: 1fr; }
+  .summary-grid { grid-template-columns: 1fr; }
+  .level-chain { grid-template-columns: 1fr 1fr; }
+}
+</style>
+</head>
+<body>
+
+<div class="label">为什么要读汇编？</div>
+<h1>读汇编不需要写汇编</h1>
+<p class="subtitle">编译产物推理是汇编阅读能力，不是汇编编写能力。</p>
+
+<div class="main-section">
+  <div class="intro-box">
+    <h2>你写的代码最终会生成 SASS</h2>
+    <p>CUDA、Triton、CUTLASS、MLIR、JAX 以及所有生成的 kernel，最终都会变成机器指令。阅读编译器的输出路径，是你验证抽象层实际产生了什么的方式。</p>
+
+    <div class="flow">
+      <div class="flow-box">
+        <div class="flow-title">你编写的</div>
+        <ul>
+          <li>source</li>
+          <li>templates</li>
+          <li>DSL program</li>
+        </ul>
+      </div>
+      <div class="flow-arrow">&#x2192;</div>
+      <div class="flow-box">
+        <div class="flow-title">编译器输出</div>
+        <ul>
+          <li>PTX</li>
+          <li>SASS</li>
+          <li>target path</li>
+        </ul>
+      </div>
+      <div class="flow-arrow">&#x2192;</div>
+      <div class="flow-box">
+        <div class="flow-title">硬件执行</div>
+        <ul>
+          <li>warps</li>
+          <li>memory</li>
+          <li>tensor cores</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="right-cards">
+    <div class="card">
+      <div class="label">不是手写 SASS</div>
+      <h3>目标不是编写汇编</h3>
+      <p>目标是编写高层代码，使其能可靠地降级（lower）为预期的硬件执行策略。</p>
+    </div>
+
+    <div class="card">
+      <div class="label">调试</div>
+      <h3>汇编回答"我到底得到了什么？"</h3>
+      <p>它揭示了标量化内存访问、local 流量、缺失的 tensor 路径、回退路由以及同步结构。</p>
+    </div>
+
+    <div class="card card--warn">
+      <div class="label label--red">内联 PTX 注意事项</div>
+      <h3>编写 PTX 有独立的失败模式</h3>
+      <p>编译器前端无法完全理解内联 <code>asm</code> 模板字符串；无效的 PTX 可以通过源码编译，但会在 <code>ptxas</code> 或 JIT 加载时失败。</p>
+    </div>
+
+    <div class="card">
+      <div class="label label--gold">Kernel 生成</div>
+      <h3>当代码是生成的时候，这更重要</h3>
+      <p>如果 agent 或 DSL 编写了 kernel，那么检查生成的汇编结构是少数能从硬件层面验证优化是否真实生效的手段之一。</p>
+    </div>
+  </div>
+</div>
+
+<div class="summary">
+  <div class="label" style="color: #4a6fa5; border-color: #4a6fa5;">总结与理解</div>
+  <h2>这张 slide 在说什么？</h2>
+
+  <div class="summary-grid">
+    <div class="insight">
+      <h3>核心论点：读和写是完全不同的技能</h3>
+      <p>就像你能看懂 X 光片不意味着你要当放射科医生一样。读 PTX/SASS 是<strong>模式识别</strong>——你在寻找特定的信号（tensor core 指令出现了吗？有没有 spill 到 local？同步结构对吗？），而不是从零开始用汇编写程序。slide 反复强调这一点，是为了降低心理门槛：你不需要"精通汇编"，你只需要学会"看懂编译器给了你什么"。</p>
+    </div>
+
+    <div class="insight">
+      <h3>为什么这件事不能跳过？</h3>
+      <p>高层框架（Triton、CUTLASS、JAX）承诺性能，但抽象层会<strong>隐藏实际发生的事情</strong>。你写了 <code>tl.dot()</code>，你以为它用了 tensor core，但编译器可能回退到了 FMA 循环。唯一确认的方式就是往下看一层：PTX 里有没有 <code>mma.sync</code>？SASS 里有没有 <code>HMMA</code>？如果没有，你的"优化"就是假的。</p>
+    </div>
+
+    <div class="insight">
+      <h3>Inline PTX 的警告值得特别注意</h3>
+      <p>Slide 单独把这一条标红，是因为它有一个反直觉的陷阱：写内联 PTX 时，<code>nvcc</code> 前端不会真正解析 <code>asm()</code> 里的字符串内容。这意味着你写了语法错误的 PTX，<strong>编译阶段不会报错</strong>，一路绿灯直到 <code>ptxas</code> 或运行时 JIT 才炸。这跟"读"汇编不同——"写"汇编有一个编译器帮不了你的盲区。</p>
+    </div>
+
+    <div class="insight">
+      <h3>AI 时代让这件事变得更重要</h3>
+      <p>当 LLM 或代码生成 agent 帮你写 kernel 时，生成的代码可能语法正确、能编译通过，但产生的汇编结构完全不是你期望的。检查生成的 PTX/SASS 是<strong>为数不多的硬件层面 ground truth 校验</strong>。这也是 slide 最后一张卡片单独强调 "kernel generation" 的原因——它不只是理论问题，而是一个正在发生的实际工作流问题。</p>
+    </div>
+  </div>
+
+  <div class="takeaway">
+    <h3>实践心智模型：你需要的不是"读懂每一条指令"，而是"知道去找什么"</h3>
+    <p>读汇编产物有五个递进的层次。slide 讨论的主要是前三层——你不需要到第五层也能从中获益：</p>
+    <div class="level-chain">
+      <div class="level-step level-step--active"><div class="level-name">认出关键指令</div><div class="level-desc">mma.sync? ld.shared? st.local?</div></div>
+      <div class="level-step level-step--active"><div class="level-name">判断策略选择</div><div class="level-desc">用了 tensor core 还是 FMA？</div></div>
+      <div class="level-step level-step--active"><div class="level-name">发现异常信号</div><div class="level-desc">spill、意外的 global 访问</div></div>
+      <div class="level-step"><div class="level-name">理解指令调度</div><div class="level-desc">stall、依赖链、占用率</div></div>
+      <div class="level-step"><div class="level-name">深度性能分析</div><div class="level-desc">结合 profiler 定量优化</div></div>
+    </div>
+    <p style="margin-top: 1rem;">Slide 的潜台词是：<strong>大多数开发者只需要前三层能力</strong>就能覆盖日常的"编译器到底干了什么"这个问题。你是在做质量检查，不是在做逆向工程。</p>
+  </div>
+</div>
+
+</body>
+</html>

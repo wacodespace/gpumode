@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NCCL EP — 统一架构与功能完备的 API</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif;
+            background: #0a0a0a;
+            color: #e0e0e0;
+            min-height: 100vh;
+            padding: 40px 20px;
+        }
+
+        .container {
+            max-width: 1080px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            text-align: center;
+            font-size: 2.1rem;
+            color: #fff;
+            margin-bottom: 6px;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #76b900;
+            font-size: 1.1rem;
+            margin-bottom: 48px;
+        }
+
+        /* ---- 三栏架构图 ---- */
+        .three-col {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 48px;
+        }
+
+        .col-panel {
+            background: #111;
+            border: 1px solid #222;
+            border-radius: 12px;
+            padding: 24px 20px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .col-panel h2 {
+            color: #76b900;
+            font-size: 1.05rem;
+            text-align: center;
+            margin-bottom: 18px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #222;
+        }
+
+        /* -- 栈式流程 -- */
+        .stack {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0;
+            flex: 1;
+        }
+
+        .sbox {
+            width: 100%;
+            text-align: center;
+            padding: 10px 8px;
+            border-radius: 7px;
+            font-size: 0.85rem;
+            line-height: 1.5;
+        }
+
+        .sbox.app   { background: #1a1a1a; border: 1px solid #333; color: #ccc; }
+        .sbox.api   { background: linear-gradient(135deg,#76b900,#5a8f00); color: #000; font-weight: 700; }
+        .sbox.kern  { background: #1e2a0a; border: 1px solid #76b90044; color: #b5d96c; }
+        .sbox.net   { background: #1a1a1a; border: 1px solid #444; color: #aaa; }
+        .sbox.hw    { background: #141414; border: 1px solid #333; color: #888; font-size: 0.8rem; }
+
+        .sbox.group { background: linear-gradient(135deg,#76b900,#5a8f00); color: #000; font-weight: 700; border-radius: 20px; }
+        .sbox.handle { background: #1e2a0a; border: 1px solid #76b90066; color: #b5d96c; font-weight: 600; }
+        .sbox.step  { background: #1a1a1a; border: 1px solid #333; color: #ccc; }
+
+        .arrow-d {
+            width: 2px; height: 18px; background: #444; position: relative;
+        }
+        .arrow-d::after {
+            content:""; position:absolute; bottom:-4px; left:50%; transform:translateX(-50%);
+            border-left:4px solid transparent; border-right:4px solid transparent; border-top:5px solid #444;
+        }
+
+        .split-row {
+            display: flex; gap: 8px; width: 100%;
+        }
+        .split-row .sbox { flex: 1; }
+
+        .note-text {
+            font-size: 0.75rem;
+            color: #777;
+            text-align: center;
+            margin-top: 10px;
+            line-height: 1.5;
+            font-style: italic;
+        }
+
+        /* -- 张量 3D 盒子 -- */
+        .tensor-visual {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 14px;
+            flex: 1;
+            justify-content: center;
+        }
+
+        .tensor-cube {
+            width: 100px; height: 90px;
+            background: linear-gradient(135deg, #2a2a2a 0%, #1a1a1a 100%);
+            border: 1px solid #444;
+            border-radius: 6px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 0.78rem; color: #76b900; font-weight: 600;
+            position: relative;
+            box-shadow: 6px 6px 0 #111, 6px 6px 0 1px #333,
+                        12px 12px 0 #0e0e0e, 12px 12px 0 1px #2a2a2a;
+        }
+
+        .attr-list {
+            list-style: none; padding: 0; width: 100%;
+        }
+        .attr-list li {
+            display: flex; align-items: flex-start; gap: 8px;
+            margin-bottom: 10px; font-size: 0.82rem; color: #bbb; line-height: 1.5;
+        }
+        .attr-num {
+            background: #76b900; color: #000; font-weight: 700;
+            width: 20px; height: 20px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 0.72rem; flex-shrink: 0;
+        }
+
+        .tag-row {
+            display: flex; flex-wrap: wrap; gap: 5px; margin-top: 4px;
+        }
+        .tag {
+            background: #1e2a0a; border: 1px solid #76b90044;
+            color: #76b900; font-size: 0.72rem; padding: 2px 8px;
+            border-radius: 10px; font-weight: 600;
+        }
+
+        /* ---- 总结卡片 ---- */
+        .card {
+            background: #111;
+            border: 1px solid #222;
+            border-radius: 12px;
+            padding: 32px 36px;
+            margin-bottom: 24px;
+        }
+
+        .card h2 {
+            color: #76b900;
+            font-size: 1.3rem;
+            margin-bottom: 18px;
+            border-bottom: 1px solid #222;
+            padding-bottom: 10px;
+        }
+
+        .card h3 {
+            color: #ccc;
+            font-size: 1.02rem;
+            margin: 20px 0 10px;
+        }
+
+        .card ul {
+            list-style: none;
+            padding-left: 0;
+        }
+
+        .card li {
+            position: relative;
+            padding-left: 20px;
+            margin-bottom: 10px;
+            line-height: 1.75;
+            color: #bbb;
+        }
+
+        .card li::before {
+            content: "▸";
+            position: absolute;
+            left: 0;
+            color: #76b900;
+        }
+
+        .card li strong {
+            color: #e0e0e0;
+        }
+
+        code {
+            background: #1e1e1e;
+            padding: 2px 7px;
+            border-radius: 3px;
+            font-size: 0.88em;
+            color: #76b900;
+            font-family: "SF Mono", "Fira Code", monospace;
+        }
+
+        .tldr {
+            background: linear-gradient(135deg, #76b900 0%, #5a8f00 100%);
+            border-radius: 10px;
+            padding: 22px 30px;
+            text-align: center;
+            color: #000;
+            font-size: 1.02rem;
+            font-weight: 600;
+            line-height: 1.7;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+
+    <h1>NCCL EP：统一架构与功能完备的 API</h1>
+    <p class="subtitle">Expert Parallelism 原生通信支持</p>
+
+    <!-- ===== 三栏架构图 ===== -->
+    <div class="three-col">
+
+        <!-- 第 1 栏：原生栈 -->
+        <div class="col-panel">
+            <h2>1. 原生栈 (The Native Stack)</h2>
+            <div class="stack">
+                <div class="sbox app">用户应用<br><span style="font-size:0.75rem;color:#999;">(PyTorch, vLLM, SGLang, Megatron-Core)</span></div>
+                <div class="arrow-d"></div>
+                <div class="sbox api"><code style="background:none;color:#000;">ncclEpDispatch()</code><br><code style="background:none;color:#000;">ncclEpCombine()</code></div>
+                <div class="arrow-d"></div>
+                <div class="split-row">
+                    <div class="sbox kern">低延迟内核<br><span style="font-size:0.72rem;">(源自 DeepEP)</span></div>
+                    <div class="sbox kern">高吞吐内核<br><span style="font-size:0.72rem;">(源自 Hybrid-EP)</span></div>
+                </div>
+                <div class="arrow-d"></div>
+                <div class="split-row">
+                    <div class="sbox net">NCCL GIN<br><span style="font-size:0.72rem;">(GPU-Initiated Networking)</span></div>
+                    <div class="sbox net">原生 NVLink 代码<br><span style="font-size:0.72rem;">(DeepEP / Hybrid-EP)</span></div>
+                </div>
+                <div class="arrow-d"></div>
+                <div class="split-row">
+                    <div class="sbox hw">跨节点 RDMA<br>IB / RoCE / SPC-X</div>
+                    <div class="sbox hw">节点内<br>PCIe / NVLink</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 第 2 栏：两级资源管理 -->
+        <div class="col-panel">
+            <h2>2. 两级资源管理</h2>
+            <div class="stack">
+                <div class="sbox group">Group / 模型生命周期</div>
+                <div style="font-size:0.8rem;color:#888;margin:4px 0;">↓</div>
+                <div class="sbox step"><code>ncclEpCreateGroup()</code></div>
+                <div class="arrow-d"></div>
+                <div class="sbox handle">Handle / 每次前向传播</div>
+                <div style="font-size:0.8rem;color:#888;margin:4px 0;">↓</div>
+                <div class="sbox step" style="border-left:3px solid #76b90066;"><code>ncclEpCreateHandle()</code></div>
+                <div class="arrow-d"></div>
+                <div class="sbox step" style="border-left:3px solid #76b90066;"><code>ncclEpDispatch()</code></div>
+                <div class="arrow-d"></div>
+                <div class="sbox step" style="border-left:3px solid #76b90066;"><code>ncclEpCombine()</code></div>
+                <p class="note-text">网络配置一次锁定；<br>路由状态按每次前向传播即时重建，<br>摊销初始化开销。</p>
+            </div>
+        </div>
+
+        <!-- 第 3 栏：丰富的张量语义 -->
+        <div class="col-panel">
+            <h2>3. 丰富的张量语义</h2>
+            <div class="tensor-visual">
+                <div class="tensor-cube">ncclNDTensor_t</div>
+                <ul class="attr-list">
+                    <li><span class="attr-num">1</span><span><strong style="color:#e0e0e0;">N 维 Shape & Strides</strong><br>支持任意维度的形状和步幅描述</span></li>
+                    <li><span class="attr-num">2</span><span><strong style="color:#e0e0e0;">NCCL 数据类型</strong><br><code>FP32</code>、<code>BF16</code>、<code>FP8</code></span></li>
+                    <li><span class="attr-num">3</span><span><strong style="color:#e0e0e0;">设备内存指针</strong><br>直接指向 GPU 显存</span></li>
+                    <li>
+                        <span class="attr-num">4</span>
+                        <span>
+                            <strong style="color:#e0e0e0;">语义标签</strong>
+                            <div class="tag-row">
+                                <span class="tag">TOKENS</span>
+                                <span class="tag">TOPK_IDX</span>
+                                <span class="tag">TOPK_WEIGHTS</span>
+                                <span class="tag">SCALES</span>
+                            </div>
+                        </span>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== 总结 ===== -->
+    <div class="card">
+        <h2>内容总结</h2>
+
+        <h3>一、什么是 NCCL EP</h3>
+        <ul>
+            <li><strong>EP = Expert Parallelism（专家并行）</strong>，是 Mixture-of-Experts (MoE) 模型中将不同 expert 分布到不同 GPU 上的并行策略。</li>
+            <li>NCCL EP API 是 NCCL 新增的<strong>原生 Expert Parallelism 通信接口</strong>，提供统一、功能完备的 API 来处理 MoE 模型中的 All-to-All 通信模式。</li>
+        </ul>
+
+        <h3>二、原生栈 — 从应用到硬件的完整路径</h3>
+        <ul>
+            <li><strong>入口 API</strong> — 只有两个核心函数：<code>ncclEpDispatch()</code>（将 token 分发到对应 expert 所在的 GPU）和 <code>ncclEpCombine()</code>（将 expert 处理后的结果收回）。</li>
+            <li><strong>双内核策略</strong> — 内部自动选择低延迟内核（源自 DeepEP，适合小批量 / 推理场景）或高吞吐内核（源自 Hybrid-EP，适合大批量 / 训练场景）。</li>
+            <li><strong>传输层</strong> — 跨节点走 NCCL GIN（GPU-Initiated Networking）通过 IB / RoCE / SPC-X 进行 RDMA 通信；节点内直接使用原生 NVLink / PCIe 代码。</li>
+        </ul>
+
+        <h3>三、两级资源管理 — Group 与 Handle</h3>
+        <ul>
+            <li><strong>Group 级别（模型生命周期）</strong> — 通过 <code>ncclEpCreateGroup()</code> 创建，与模型绑定，网络配置一次锁定（拓扑发现、路径分配等重开销只做一次）。</li>
+            <li><strong>Handle 级别（每次前向传播）</strong> — 通过 <code>ncclEpCreateHandle()</code> 创建，路由状态（哪些 token 发往哪些 expert）按每次前向传播即时重建，因为 MoE 的路由决策每次都不同。</li>
+            <li><strong>设计哲学</strong> — 将"昂贵的一次性初始化"与"轻量的每步路由"分离，摊销初始化开销，避免每个 forward pass 都重新建立连接。</li>
+        </ul>
+
+        <h3>四、丰富的张量语义 — <code>ncclNDTensor_t</code></h3>
+        <ul>
+            <li><strong>不再是"一块裸内存"</strong> — NCCL EP 引入 <code>ncclNDTensor_t</code> 结构体，让通信层理解张量的形状和含义。</li>
+            <li><strong>N 维 Shape & Strides</strong> — 支持任意维度描述，可以表达 <code>[batch, seq, hidden]</code> 等多维布局。</li>
+            <li><strong>数据类型</strong> — 原生支持 <code>FP32</code>、<code>BF16</code>、<code>FP8</code>，通信层可据此优化传输和归约精度。</li>
+            <li><strong>语义标签</strong> — 通过 <code>TOKENS</code>、<code>TOPK_IDX</code>、<code>TOPK_WEIGHTS</code>、<code>SCALES</code> 等标签标识每个张量的语义角色，NCCL 内部可据此做差异化优化（如 index 用整型传输，weights 用低精度压缩）。</li>
+        </ul>
+
+        <h3>五、核心价值</h3>
+        <ul>
+            <li><strong>统一替代碎片化方案</strong> — 之前各框架自己实现 All-to-All（DeepEP、Hybrid-EP 等），现在 NCCL 原生集成，一套 API 适配所有框架（PyTorch / vLLM / SGLang / Megatron-Core）。</li>
+            <li><strong>自动选择最优策略</strong> — 根据场景自动在低延迟和高吞吐内核之间切换，开发者无需手动调优。</li>
+            <li><strong>语义感知通信</strong> — 张量带有类型和语义信息，NCCL 可以针对不同数据做定制化的传输优化，而非盲目搬运字节。</li>
+        </ul>
+    </div>
+
+    <div class="tldr">
+        NCCL EP = MoE 模型的原生通信层：两个 API 搞定 token 分发与收回，<br>
+        两级资源管理分离初始化与路由开销，张量语义让通信层"看懂"数据。
+    </div>
+
+</div>
+</body>
+</html>

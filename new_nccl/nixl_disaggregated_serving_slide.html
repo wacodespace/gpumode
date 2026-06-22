@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>分离式推理服务 — Prefill → Decode 内存到内存通信</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+            background: #1a1a2e;
+            color: #e0e0e0;
+            line-height: 1.6;
+            padding: 40px 20px;
+        }
+
+        .slide-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: #16213e;
+            border-radius: 16px;
+            box-shadow: 0 4px 32px rgba(0, 0, 0, 0.4);
+            padding: 48px 56px;
+        }
+
+        /* 标题 */
+        .slide-title {
+            text-align: center;
+            margin-bottom: 36px;
+        }
+
+        .slide-title h1 {
+            font-size: 30px;
+            font-weight: 700;
+            color: #fff;
+        }
+
+        .slide-title .subtitle {
+            font-size: 16px;
+            color: #6aab2e;
+            margin-top: 6px;
+        }
+
+        /* 三栏架构 */
+        .arch-row {
+            display: flex;
+            gap: 20px;
+            align-items: stretch;
+            margin-bottom: 28px;
+        }
+
+        /* Worker 卡片 */
+        .worker-card {
+            flex: 1;
+            border: 2px solid;
+            border-radius: 12px;
+            padding: 24px;
+        }
+
+        .worker-card.prefill {
+            border-color: #6aab2e;
+        }
+
+        .worker-card.decode {
+            border-color: #29a8df;
+        }
+
+        .worker-card .card-header {
+            font-size: 18px;
+            font-weight: 700;
+            color: #fff;
+            text-align: center;
+            margin-bottom: 16px;
+        }
+
+        .worker-info {
+            display: flex;
+            align-items: flex-start;
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+
+        .gpu-icon {
+            width: 56px;
+            height: 56px;
+            background: #2a2a4a;
+            border: 1px solid #444;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            font-weight: 700;
+            color: #aaa;
+            flex-shrink: 0;
+        }
+
+        .worker-details .bound-type {
+            font-size: 15px;
+            font-weight: 700;
+            margin-bottom: 6px;
+        }
+
+        .worker-details .bound-type.compute { color: #6aab2e; }
+        .worker-details .bound-type.memory  { color: #29a8df; }
+
+        .worker-details ul {
+            list-style: none;
+            padding: 0;
+        }
+
+        .worker-details li {
+            font-size: 13px;
+            color: #bbb;
+            padding: 2px 0 2px 14px;
+            position: relative;
+        }
+
+        .worker-details li::before {
+            content: "•";
+            position: absolute;
+            left: 0;
+            color: #777;
+        }
+
+        /* KV Cache 框 */
+        .kv-box {
+            border: 1px solid;
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin-top: 8px;
+        }
+
+        .kv-box.source {
+            border-color: #6aab2e;
+        }
+
+        .kv-box.reused {
+            border-color: #29a8df;
+        }
+
+        .kv-box .kv-title {
+            font-size: 14px;
+            font-weight: 700;
+        }
+
+        .kv-box.source .kv-title { color: #6aab2e; }
+        .kv-box.reused .kv-title { color: #29a8df; }
+
+        .kv-box .kv-desc {
+            font-size: 12px;
+            color: #999;
+            margin-top: 2px;
+        }
+
+        /* 中间：Transfer Layer */
+        .transfer-col {
+            flex: 0 0 240px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 20px;
+        }
+
+        .transfer-label {
+            font-size: 16px;
+            font-weight: 700;
+            color: #fff;
+            text-align: center;
+        }
+
+        .transfer-arrow {
+            width: 100%;
+            height: 44px;
+            background: linear-gradient(90deg, #6aab2e, #29a8df);
+            border-radius: 6px 22px 22px 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: 700;
+            color: #fff;
+            position: relative;
+        }
+
+        .transfer-arrow::after {
+            content: "";
+            position: absolute;
+            right: -12px;
+            top: 50%;
+            transform: translateY(-50%);
+            border: 12px solid transparent;
+            border-left: 14px solid #29a8df;
+        }
+
+        .nixl-box {
+            background: #2a2a4a;
+            border: 1px solid #555;
+            border-radius: 10px;
+            padding: 16px 20px;
+            text-align: center;
+        }
+
+        .nixl-box .nixl-title {
+            font-size: 15px;
+            font-weight: 700;
+            color: #fff;
+            margin-bottom: 6px;
+        }
+
+        .nixl-box .nixl-desc {
+            font-size: 13px;
+            color: #bbb;
+        }
+
+        .nixl-box .nixl-also {
+            font-size: 12px;
+            color: #888;
+            margin-top: 4px;
+        }
+
+        /* 底部：Key Benefits */
+        .benefits-bar {
+            border: 2px solid #6aab2e;
+            border-radius: 12px;
+            padding: 20px 28px;
+            display: flex;
+            gap: 16px;
+        }
+
+        .benefits-bar .bar-title {
+            text-align: center;
+            font-size: 16px;
+            font-weight: 700;
+            color: #fff;
+            margin-bottom: 12px;
+            grid-column: 1 / -1;
+        }
+
+        .benefit-item {
+            flex: 1;
+            text-align: center;
+        }
+
+        .benefit-item .benefit-title {
+            font-size: 15px;
+            font-weight: 700;
+            color: #6aab2e;
+            margin-bottom: 4px;
+        }
+
+        .benefit-item .benefit-desc {
+            font-size: 13px;
+            color: #bbb;
+        }
+
+        .benefits-header {
+            text-align: center;
+            font-size: 17px;
+            font-weight: 700;
+            color: #fff;
+            margin-bottom: 12px;
+            padding-top: 4px;
+        }
+
+        /* 总结 - 浅色 */
+        .summary-section {
+            margin-top: 44px;
+            border-top: 2px solid #6aab2e;
+            padding-top: 28px;
+        }
+
+        .summary-section h2 {
+            font-size: 22px;
+            color: #fff;
+            margin-bottom: 16px;
+        }
+
+        .summary-section > ul {
+            list-style: none;
+            padding: 0;
+        }
+
+        .summary-section > ul > li {
+            position: relative;
+            padding: 8px 0 8px 20px;
+            font-size: 15px;
+            color: #ccc;
+            line-height: 1.75;
+        }
+
+        .summary-section > ul > li::before {
+            content: "•";
+            position: absolute;
+            left: 0;
+            color: #6aab2e;
+            font-weight: 700;
+        }
+
+        .summary-section li strong {
+            color: #fff;
+        }
+
+        .sub-list {
+            list-style: none;
+            padding-left: 20px;
+            margin-top: 6px;
+        }
+
+        .sub-list li {
+            position: relative;
+            padding: 3px 0 3px 16px;
+            font-size: 14px;
+            color: #aaa;
+        }
+
+        .sub-list li::before {
+            content: "–";
+            position: absolute;
+            left: 0;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+
+<div class="slide-container">
+
+    <!-- 标题 -->
+    <div class="slide-title">
+        <h1>分离式推理服务（Disaggregated Serving）</h1>
+        <div class="subtitle">Prefill → Decode | 内存到内存通信</div>
+    </div>
+
+    <!-- 三栏架构 -->
+    <div class="arch-row">
+
+        <!-- Prefill Worker -->
+        <div class="worker-card prefill">
+            <div class="card-header">Prefill Worker</div>
+            <div class="worker-info">
+                <div class="gpu-icon">GPU</div>
+                <div class="worker-details">
+                    <div class="bound-type compute">计算密集型（Compute-Bound）</div>
+                    <ul>
+                        <li>并行处理整个 prompt</li>
+                        <li>生成第一个 token</li>
+                        <li>填充 KV Cache</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="kv-box source">
+                <div class="kv-title">KV Cache</div>
+                <div class="kv-desc">每个请求数 GB</div>
+                <div class="kv-desc">存储所有 token 的 Keys + Values</div>
+            </div>
+        </div>
+
+        <!-- Transfer Layer -->
+        <div class="transfer-col">
+            <div class="transfer-label">传输层</div>
+            <div class="transfer-arrow">KV Cache 传输</div>
+            <div class="nixl-box">
+                <div class="nixl-title">NIXL Library</div>
+                <div class="nixl-desc">GPU ↔ GPU 直接传输</div>
+                <div class="nixl-also">支持：UCX、RDMA、NVLink</div>
+            </div>
+        </div>
+
+        <!-- Decode Worker -->
+        <div class="worker-card decode">
+            <div class="card-header">Decode Worker</div>
+            <div class="worker-info">
+                <div class="gpu-icon">GPU</div>
+                <div class="worker-details">
+                    <div class="bound-type memory">内存密集型（Memory-Bound）</div>
+                    <ul>
+                        <li>接收 KV Cache</li>
+                        <li>逐 token 生成</li>
+                        <li>自回归生成</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="kv-box reused">
+                <div class="kv-title">复用 KV Cache</div>
+                <div class="kv-desc">无需重新计算</div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Key Benefits -->
+    <div class="benefits-bar">
+        <div style="width:100%;">
+            <div class="benefits-header">核心优势</div>
+            <div style="display:flex;gap:16px;">
+                <div class="benefit-item">
+                    <div class="benefit-title">更高 GPU 利用率</div>
+                    <div class="benefit-desc">每个 worker 针对自身工作负载优化</div>
+                </div>
+                <div class="benefit-item">
+                    <div class="benefit-title">降低 TCO</div>
+                    <div class="benefit-desc">Prefill 与 Decode 可独立扩缩</div>
+                </div>
+                <div class="benefit-item">
+                    <div class="benefit-title">更低 TTFT</div>
+                    <div class="benefit-desc">Prefill 不阻塞 Decode</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 总结 -->
+    <div class="summary-section">
+        <h2>内容总结</h2>
+        <ul>
+            <li><strong>分离式推理服务（Disaggregated Serving）</strong>将 LLM 推理的两个阶段——Prefill（预填充）和 Decode（解码）——拆分到不同的 GPU worker 上独立运行，并通过 NIXL 库实现 KV Cache 的高效传输。</li>
+            <li><strong>两个阶段的本质差异：</strong>
+                <ul class="sub-list">
+                    <li><strong>Prefill Worker（计算密集型）</strong> — 并行处理整个输入 prompt，生成第一个 token 并填充 KV Cache。此阶段大量矩阵乘法，GPU 算力是瓶颈。</li>
+                    <li><strong>Decode Worker（内存密集型）</strong> — 接收 KV Cache 后逐 token 自回归生成。此阶段每步只生成一个 token，主要瓶颈在于从显存读取 KV Cache 的带宽。</li>
+                </ul>
+            </li>
+            <li><strong>KV Cache 传输：</strong>Prefill 完成后产生的 KV Cache（每个请求可达数 GB）通过 NIXL 库从 Prefill GPU 直接传输到 Decode GPU。NIXL 支持 GPU↔GPU 直接传输（GPUDirect RDMA）、UCX、NVLink 等多种传输方式，避免经过主机内存中转。</li>
+            <li><strong>Decode 端复用 KV Cache，无需重新计算</strong>——这是分离式架构的关键收益：Prefill 的计算结果不会被浪费。</li>
+            <li><strong>三大核心优势：</strong>
+                <ul class="sub-list">
+                    <li><strong>更高 GPU 利用率</strong> — Prefill 用计算型 GPU 配置，Decode 用带宽型配置，各取所长。</li>
+                    <li><strong>降低 TCO（总拥有成本）</strong> — Prefill 和 Decode 可以独立扩缩容：流量高峰时只需扩 Prefill，长对话多时只需扩 Decode。</li>
+                    <li><strong>更低 TTFT（首 token 延迟）</strong> — Prefill 不再阻塞正在进行的 Decode 任务，两者完全解耦并行。</li>
+                </ul>
+            </li>
+        </ul>
+    </div>
+
+</div>
+
+</body>
+</html>

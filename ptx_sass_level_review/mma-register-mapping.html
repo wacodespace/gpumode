@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tensor Core MMA 寄存器映射可视化</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: #fafafa;
+  color: #1a1a1a;
+  padding: 2.5rem 2rem;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+.label {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid #ccc;
+  margin-bottom: 0.8rem;
+}
+.label--blue { color: #4a6fa5; border-color: #4a6fa5; }
+.label--red { color: #a04040; border-color: #c88; }
+.label--gold { color: #8b6914; border-color: #d4a843; }
+h1 {
+  font-size: 2rem;
+  font-weight: 800;
+  margin-bottom: 0.5rem;
+}
+.subtitle {
+  font-size: 0.9rem;
+  color: #666;
+  margin-bottom: 2rem;
+  line-height: 1.6;
+}
+.subtitle code {
+  background: #f0f0e8;
+  padding: 0.15rem 0.4rem;
+  font-size: 0.82rem;
+}
+
+/* equation */
+.equation {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 2.5rem;
+  flex-wrap: wrap;
+}
+.eq-matrix {
+  border: 2px solid #ccc;
+  padding: 0.8rem 1.2rem;
+  text-align: center;
+  background: #fff;
+  min-width: 80px;
+}
+.eq-matrix .eq-name {
+  font-weight: 700;
+  font-size: 1rem;
+  margin-bottom: 0.2rem;
+}
+.eq-matrix .eq-dim {
+  font-size: 0.75rem;
+  color: #888;
+}
+.eq-op {
+  font-size: 1.5rem;
+  color: #aaa;
+  font-weight: 300;
+}
+.eq-matrix--a { border-color: #5b8abf; background: #f0f5fa; }
+.eq-matrix--b { border-color: #6a9f5b; background: #f0f8ee; }
+.eq-matrix--d { border-color: #bf7b3a; background: #fdf5ee; }
+
+/* matrix grid */
+.matrix-section {
+  margin-bottom: 2.5rem;
+}
+.matrix-section h2 {
+  font-size: 1.2rem;
+  font-weight: 700;
+  margin-bottom: 0.4rem;
+}
+.matrix-section .desc {
+  font-size: 0.82rem;
+  color: #666;
+  margin-bottom: 1rem;
+  line-height: 1.6;
+}
+.matrix-wrap {
+  overflow-x: auto;
+  margin-bottom: 0.8rem;
+}
+.matrix-table {
+  border-collapse: collapse;
+  font-size: 0.65rem;
+  font-family: "SF Mono", "Fira Code", monospace;
+}
+.matrix-table th {
+  padding: 0.3rem 0.2rem;
+  font-weight: 600;
+  color: #999;
+  font-size: 0.6rem;
+  min-width: 52px;
+}
+.matrix-table th.row-hdr {
+  text-align: right;
+  padding-right: 0.5rem;
+  min-width: 40px;
+}
+.matrix-table td {
+  padding: 0.25rem 0.2rem;
+  text-align: center;
+  border: 1px solid #e8e8e8;
+  min-width: 52px;
+  line-height: 1.3;
+  cursor: default;
+  transition: opacity 0.15s;
+}
+.matrix-table td .t-id {
+  font-weight: 700;
+  font-size: 0.68rem;
+}
+.matrix-table td .r-id {
+  font-size: 0.58rem;
+  opacity: 0.7;
+}
+.matrix-table tr.group-boundary td {
+  border-top: 2px solid #aaa;
+}
+
+/* thread detail */
+.thread-detail {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+  margin-bottom: 2.5rem;
+}
+.detail-panel {
+  border: 1px solid #e0e0e0;
+  background: #fff;
+  padding: 1.5rem;
+}
+.detail-panel h2 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin-bottom: 0.3rem;
+}
+.detail-panel .desc {
+  font-size: 0.8rem;
+  color: #666;
+  margin-bottom: 1rem;
+}
+.reg-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 0.78rem;
+}
+.reg-table th {
+  text-align: left;
+  padding: 0.5rem 0.6rem;
+  border-bottom: 2px solid #ddd;
+  font-size: 0.7rem;
+  color: #888;
+  font-weight: 600;
+}
+.reg-table td {
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid #eee;
+}
+.reg-table .reg-name {
+  font-weight: 700;
+}
+
+/* highlight on hover */
+.matrix-table td.highlight {
+  outline: 2px solid #1a1a1a;
+  outline-offset: -1px;
+  z-index: 1;
+  position: relative;
+}
+.matrix-table td.dim { opacity: 0.2; }
+
+/* legend */
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.8rem;
+  margin-bottom: 1rem;
+  font-size: 0.72rem;
+}
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+.legend-swatch {
+  width: 14px;
+  height: 14px;
+  border: 1px solid #ccc;
+  border-radius: 2px;
+}
+
+/* insight */
+.insight-box {
+  border: 1px solid #e0e0e0;
+  border-left: 4px solid #4a6fa5;
+  background: #f5f8fb;
+  padding: 1.2rem 1.5rem;
+  margin-bottom: 2rem;
+}
+.insight-box h3 {
+  font-size: 1rem;
+  font-weight: 700;
+  margin-bottom: 0.6rem;
+}
+.insight-box p {
+  font-size: 0.85rem;
+  color: #555;
+  line-height: 1.7;
+  margin-bottom: 0.5rem;
+}
+.insight-box p:last-child { margin-bottom: 0; }
+
+/* controls */
+.controls {
+  display: flex;
+  gap: 0.8rem;
+  margin-bottom: 1rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.controls label {
+  font-size: 0.8rem;
+  color: #555;
+}
+.controls select, .controls input {
+  font-size: 0.8rem;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 3px;
+}
+.controls button {
+  font-size: 0.78rem;
+  padding: 0.35rem 0.8rem;
+  border: 1px solid #ccc;
+  border-radius: 3px;
+  background: #fff;
+  cursor: pointer;
+}
+.controls button:hover { background: #f0f0f0; }
+.controls button.active { background: #4a6fa5; color: #fff; border-color: #4a6fa5; }
+
+@media (max-width: 900px) {
+  .thread-detail { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<div class="label">硬件寄存器映射</div>
+<h1>Tensor Core 怎样从线程寄存器中读取矩阵元素</h1>
+<p class="subtitle">
+  以 <code>mma.sync.aligned.m16n8k16.row.col.f16.f16.f16.f16</code> 为例。<br>
+  Warp 内 32 个线程的寄存器，按照硬件固定的映射关系，拼成完整的矩阵操作数。
+</p>
+
+<div class="equation">
+  <div class="eq-matrix eq-matrix--d"><div class="eq-name">D</div><div class="eq-dim">16 × 8</div></div>
+  <div class="eq-op">=</div>
+  <div class="eq-matrix eq-matrix--a"><div class="eq-name">A</div><div class="eq-dim">16 × 16</div></div>
+  <div class="eq-op">×</div>
+  <div class="eq-matrix eq-matrix--b"><div class="eq-name">B</div><div class="eq-dim">16 × 8</div></div>
+  <div class="eq-op">+</div>
+  <div class="eq-matrix eq-matrix--d"><div class="eq-name">C</div><div class="eq-dim">16 × 8</div></div>
+</div>
+
+<!-- ============ D/C Matrix ============ -->
+<div class="matrix-section">
+  <div class="label label--gold">输出矩阵</div>
+  <h2>D/C 矩阵（16 × 8）— 每个线程持有 4 个 f16 元素，装在 2 个寄存器里</h2>
+  <p class="desc">
+    每个格子显示 <strong>T<em>n</em></strong>（线程号）和 <strong>R<em>m</em></strong>（寄存器编号）。
+    同一颜色 = 同一线程持有。鼠标悬停在格子上可高亮该线程的全部元素。
+  </p>
+  <div class="controls">
+    <label>高亮线程：</label>
+    <select id="thread-select-d">
+      <option value="-1">无</option>
+    </select>
+    <button id="btn-reset-d">重置</button>
+  </div>
+  <div class="matrix-wrap">
+    <table class="matrix-table" id="matrix-d"></table>
+  </div>
+</div>
+
+<!-- ============ A Matrix ============ -->
+<div class="matrix-section">
+  <div class="label label--blue">输入矩阵 A</div>
+  <h2>A 矩阵（16 × 16）— 每个线程持有 8 个 f16 元素，装在 4 个寄存器里</h2>
+  <p class="desc">
+    与 D/C 矩阵使用同一套线程-行映射规则，但因为 K 维度加倍（16 列），每个线程需要更多寄存器来覆盖额外的列。
+  </p>
+  <div class="controls">
+    <label>高亮线程：</label>
+    <select id="thread-select-a">
+      <option value="-1">无</option>
+    </select>
+    <button id="btn-reset-a">重置</button>
+  </div>
+  <div class="matrix-wrap">
+    <table class="matrix-table" id="matrix-a"></table>
+  </div>
+</div>
+
+<!-- ============ Thread Detail ============ -->
+<div class="thread-detail">
+  <div class="detail-panel">
+    <div class="label">线程视角</div>
+    <h2>单个线程看到了什么？</h2>
+    <p class="desc">以 <strong>Thread 5</strong> 为例：groupID = 5/4 = 1，threadInGroup = 5%4 = 1</p>
+    <table class="reg-table">
+      <thead>
+        <tr><th>寄存器</th><th>矩阵</th><th>存的元素</th><th>位置</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="reg-name">%r0</td><td>A</td>
+          <td>2 × f16</td><td>A[1][2], A[1][3]</td>
+        </tr>
+        <tr>
+          <td class="reg-name">%r1</td><td>A</td>
+          <td>2 × f16</td><td>A[1][10], A[1][11]</td>
+        </tr>
+        <tr>
+          <td class="reg-name">%r2</td><td>A</td>
+          <td>2 × f16</td><td>A[9][2], A[9][3]</td>
+        </tr>
+        <tr>
+          <td class="reg-name">%r3</td><td>A</td>
+          <td>2 × f16</td><td>A[9][10], A[9][11]</td>
+        </tr>
+        <tr style="border-top: 2px solid #ccc;">
+          <td class="reg-name">%r4</td><td>D/C</td>
+          <td>2 × f16</td><td>D[1][2], D[1][3]</td>
+        </tr>
+        <tr>
+          <td class="reg-name">%r5</td><td>D/C</td>
+          <td>2 × f16</td><td>D[9][2], D[9][3]</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="detail-panel">
+    <div class="label label--red">关键观察</div>
+    <h2>为什么是"硬连线"？</h2>
+    <p class="desc" style="margin-bottom: 0.8rem;">从 Thread 5 的寄存器分配可以看出这些规律：</p>
+    <div class="insight-box" style="border-left-color: #c88; background: #fdf8f8;">
+      <p><strong>行由 T/4 决定。</strong> Thread 5 的 groupID = 1，所以它永远负责第 1 行和第 9 行（1 + 8）。不管你怎么排数据，硬件就是从这个线程的寄存器读这两行的元素。</p>
+    </div>
+    <div class="insight-box" style="border-left-color: #c88; background: #fdf8f8;">
+      <p><strong>列由 T%4 决定。</strong> Thread 5 的 threadInGroup = 1，所以它覆盖第 2、3 列（以及 A 矩阵的第 10、11 列）。每个寄存器装 2 个相邻的 f16。</p>
+    </div>
+    <div class="insight-box" style="border-left-color: #c88; background: #fdf8f8;">
+      <p><strong>上下半矩阵用不同寄存器。</strong> 行 0-7 在 R0/R1，行 8-15 在 R2/R3。Tensor Core 通过切换读取的寄存器编号来访问矩阵的上半部分和下半部分。</p>
+    </div>
+  </div>
+</div>
+
+<!-- ============ Summary ============ -->
+<div class="insight-box">
+  <div class="label label--blue">总结</div>
+  <h3>ldmatrix 做的事 = 把 shared memory 的数据搬到这张图的正确位置</h3>
+  <p>上面的可视化展示了 MMA 指令<strong>期望</strong>数据在寄存器里的位置。<code>ldmatrix</code> 的工作就是：从 shared memory 读取矩阵数据，然后在一条指令内把每个元素分发到对应线程的对应寄存器——也就是上图中每个格子标注的位置。</p>
+  <p>如果没有 <code>ldmatrix</code>，你需要用 <code>ld.shared</code>（每个线程各自加载）+ <code>shfl.sync</code>（线程间交换数据）手动实现同样的分发，既慢又容易放错位置。</p>
+  <p>这就是为什么说寄存器布局是"硬连线"的：<strong>不是你选择把数据放在哪个线程的哪个寄存器，而是硬件规定了它从哪里读。你的工作是把数据送到那里。</strong></p>
+</div>
+
+<script>
+const THREAD_COLORS = [
+  '#dce8f5','#c5d9ed','#aecae5','#97bbdd',
+  '#d5ecd1','#bee0b8','#a7d49f','#90c886',
+  '#f5e0c5','#edc9a0','#e5b27b','#dd9b56',
+  '#e3d5f0','#d1bde5','#bfa5da','#ad8dcf',
+  '#f5cece','#eab5b5','#df9c9c','#d48383',
+  '#c5ece8','#aee0db','#97d4ce','#80c8c1',
+  '#f0d5e8','#e5bdd8','#daa5c8','#cf8db8',
+  '#f0eac5','#e5dea0','#dad27b','#cfc656'
+];
+
+function getMapping(type, row, col) {
+  if (type === 'd') {
+    const t = Math.floor(row % 8) * 4 + Math.floor(col / 2);
+    const r = Math.floor(row / 8);
+    return { thread: t, reg: r };
+  } else {
+    const t = Math.floor(row % 8) * 4 + Math.floor((col % 8) / 2);
+    const r = Math.floor(row / 8) * 2 + Math.floor(col / 8);
+    return { thread: t, reg: r };
+  }
+}
+
+function buildMatrix(tableId, type, rows, cols) {
+  const table = document.getElementById(tableId);
+  // header
+  const thead = document.createElement('thead');
+  const hrow = document.createElement('tr');
+  const corner = document.createElement('th');
+  corner.className = 'row-hdr';
+  corner.textContent = '';
+  hrow.appendChild(corner);
+  for (let c = 0; c < cols; c++) {
+    const th = document.createElement('th');
+    th.textContent = 'col ' + c;
+    hrow.appendChild(th);
+  }
+  thead.appendChild(hrow);
+  table.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+  for (let r = 0; r < rows; r++) {
+    const tr = document.createElement('tr');
+    if (r === 8) tr.className = 'group-boundary';
+    const rh = document.createElement('th');
+    rh.className = 'row-hdr';
+    rh.textContent = 'row ' + r;
+    tr.appendChild(rh);
+    for (let c = 0; c < cols; c++) {
+      const td = document.createElement('td');
+      const m = getMapping(type, r, c);
+      td.style.background = THREAD_COLORS[m.thread];
+      td.dataset.thread = m.thread;
+      td.innerHTML = '<div class="t-id">T' + m.thread + '</div><div class="r-id">R' + m.reg + '</div>';
+      tr.appendChild(td);
+    }
+    tbody.appendChild(tr);
+  }
+  table.appendChild(tbody);
+}
+
+function setupHighlight(tableId, selectId, resetId) {
+  const table = document.getElementById(tableId);
+  const select = document.getElementById(selectId);
+  const reset = document.getElementById(resetId);
+  const cells = table.querySelectorAll('td');
+
+  // populate select
+  for (let i = 0; i < 32; i++) {
+    const opt = document.createElement('option');
+    opt.value = i;
+    opt.textContent = 'Thread ' + i;
+    select.appendChild(opt);
+  }
+
+  function highlightThread(tid) {
+    cells.forEach(td => {
+      const t = parseInt(td.dataset.thread);
+      if (tid < 0) {
+        td.classList.remove('highlight', 'dim');
+      } else if (t === tid) {
+        td.classList.add('highlight');
+        td.classList.remove('dim');
+      } else {
+        td.classList.add('dim');
+        td.classList.remove('highlight');
+      }
+    });
+  }
+
+  select.addEventListener('change', () => highlightThread(parseInt(select.value)));
+  reset.addEventListener('click', () => { select.value = -1; highlightThread(-1); });
+
+  cells.forEach(td => {
+    td.addEventListener('mouseenter', () => {
+      if (select.value >= 0) return;
+      highlightThread(parseInt(td.dataset.thread));
+    });
+    td.addEventListener('mouseleave', () => {
+      if (select.value >= 0) return;
+      highlightThread(-1);
+    });
+  });
+}
+
+buildMatrix('matrix-d', 'd', 16, 8);
+buildMatrix('matrix-a', 'a', 16, 16);
+setupHighlight('matrix-d', 'thread-select-d', 'btn-reset-d');
+setupHighlight('matrix-a', 'thread-select-a', 'btn-reset-a');
+</script>
+
+</body>
+</html>

@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PTX 的真正用途</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: #fafafa;
+  color: #1a1a1a;
+  padding: 3rem 2rem;
+  max-width: 1300px;
+  margin: 0 auto;
+}
+.label {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 0.25rem 0.6rem;
+  border: 1px solid #ccc;
+  margin-bottom: 1rem;
+}
+.label--gold { color: #8b6914; border-color: #d4a843; }
+.label--red { color: #a04040; border-color: #c88; }
+h1 {
+  font-size: 2.2rem;
+  font-weight: 800;
+  margin-bottom: 0.5rem;
+}
+.subtitle {
+  font-size: 1rem;
+  color: #444;
+  line-height: 1.6;
+  margin-bottom: 2.5rem;
+}
+.main-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 2rem;
+  margin-bottom: 2rem;
+}
+.left-panel {
+  border: 1px solid #e0e0e0;
+  background: #fff;
+  padding: 2rem;
+}
+.left-panel h2 {
+  font-size: 1.4rem;
+  font-weight: 700;
+  margin-bottom: 1rem;
+}
+.left-panel p {
+  font-size: 0.9rem;
+  color: #555;
+  line-height: 1.7;
+  margin-bottom: 1.5rem;
+}
+.code-block {
+  background: #f5f5f0;
+  border: 1px solid #e8e8e3;
+  padding: 1.2rem 1.5rem;
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 0.8rem;
+  line-height: 1.8;
+  overflow-x: auto;
+}
+.code-block .comment { color: #888; }
+.code-block .fn { color: #c0392b; }
+.code-block .kw { color: #2980b9; }
+.right-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+.info-card {
+  border: 1px solid #e0e0e0;
+  background: #fff;
+  padding: 1.5rem;
+}
+.info-card h3 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin-bottom: 0.6rem;
+}
+.info-card p {
+  font-size: 0.85rem;
+  color: #555;
+  line-height: 1.6;
+}
+@media (max-width: 800px) {
+  .main-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<div class="label">PTX 的定位</div>
+<h1>PTX 的真正用途</h1>
+<p class="subtitle">PTX 是源码意图变为可审查的执行结构的桥梁。</p>
+
+<div class="main-grid">
+  <div class="left-panel">
+    <h2>PTX 是虚拟 ISA 和可移植性边界</h2>
+    <p>PTX 不是最终的指令流。它是 NVIDIA 版本化的虚拟 ISA 和编译器目标：足够可读以便审查，足够抽象以跨架构存活，又足够具体以暴露 lowering 结构。</p>
+    <div class="code-block">
+      <span class="comment">// PTX 命名意图和内存空间</span><br>
+      ld.global.v4.u32 [%r8,%r9,%r10,%r11], [%rd4];<br>
+      <span class="kw">mma.sync.aligned.m16n8k16</span> ...<br>
+      <span class="fn">st.local.u64</span> [%rd12], %rd88;
+    </div>
+  </div>
+
+  <div class="right-panel">
+    <div class="info-card">
+      <div class="label label--gold">编译器目标</div>
+      <h3>前端与 NVIDIA 后端之间的契约</h3>
+      <p>CUDA、Triton、模板库和各种 DSL 都可以先汇聚到 PTX，再由 ptxas 做目标架构特定的 lowering。</p>
+    </div>
+
+    <div class="info-card">
+      <div class="label">审查层</div>
+      <h3>机器码之前的可读结构</h3>
+      <p>寄存器、地址空间、向量宽度、tensor 指令、barrier 和 local memory 流量，在 PTX 层审查比在原始 SASS 中容易得多。</p>
+    </div>
+
+    <div class="info-card">
+      <div class="label label--red">不是最终裁决</div>
+      <h3>PTX 提出度量问题，而非给出答案</h3>
+      <p>PTX 可以暴露溢出路径或标量化访问，但它无法证明运行时开销 — 没有 profiling 和 benchmark，PTX 只是线索，不是结论。</p>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

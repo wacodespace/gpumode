@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>案例研究：评估融合 GEMM+Bias+ReLU Kernel 的 Cutlass 实现</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: #fafafa;
+  color: #1a1a1a;
+  padding: 3rem 2rem;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+.label {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid #ccc;
+  margin-bottom: 0.8rem;
+}
+.label--red { color: #a04040; border-color: #c88; }
+.label--gold { color: #8b6914; border-color: #d4a843; }
+.label--blue { color: #4a6fa5; border-color: #4a6fa5; }
+h1 { font-size: 1.9rem; font-weight: 800; margin-bottom: 0.5rem; }
+.subtitle { font-size: 0.92rem; color: #666; margin-bottom: 2.5rem; }
+
+/* two-column case layout */
+.case-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+.panel {
+  border: 1px solid #e0e0e0;
+  background: #fff;
+  padding: 1.5rem;
+}
+.panel-label {
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #888;
+  margin-bottom: 1rem;
+}
+.panel h2 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin-bottom: 0.4rem;
+}
+.panel h2 code { color: #8b6914; font-size: 0.95rem; }
+.panel .target-note {
+  font-size: 0.8rem;
+  color: #666;
+  line-height: 1.6;
+  margin-bottom: 1.2rem;
+}
+
+/* findings */
+.finding {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  margin-bottom: 0.8rem;
+}
+.finding-tag {
+  flex-shrink: 0;
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.25rem 0.5rem;
+  margin-top: 0.05rem;
+}
+.finding-tag--critical { background: #fce4ec; color: #c0392b; border: 1px solid #e8a0b0; }
+.finding-tag--risk { background: #fff8e1; color: #8b6914; border: 1px solid #d4a843; }
+.finding-text {
+  font-size: 0.8rem;
+  color: #555;
+  line-height: 1.5;
+}
+.finding-text .mono {
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-weight: 600;
+  color: #1a1a1a;
+}
+
+/* code block */
+.code-block {
+  background: #f5f5f0;
+  border: 1px solid #e8e8e3;
+  padding: 0.8rem 1rem;
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 0.76rem;
+  line-height: 1.8;
+  margin: 1rem 0;
+}
+.code-block .comment { color: #888; }
+.code-block .signal { color: #c0392b; font-weight: 600; }
+.sub-label {
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #888;
+  margin: 1rem 0 0.4rem;
+}
+.template-note {
+  font-size: 0.78rem;
+  color: #555;
+  line-height: 1.6;
+  border-left: 3px solid #ddd;
+  padding-left: 0.8rem;
+}
+
+/* compare two sub-columns */
+.compare-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 1.2rem;
+}
+.compare-col {
+  border: 1px solid #e8e8e3;
+  padding: 0.9rem 1rem;
+}
+.compare-col--observed { background: #fdf8f8; border-top: 2px solid #c0392b; }
+.compare-col--native { background: #f4faf4; border-top: 2px solid #2e7d32; }
+.compare-col .cc-label {
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #888;
+  margin-bottom: 0.6rem;
+}
+.compare-col ul { list-style: none; }
+.compare-col li {
+  font-size: 0.78rem;
+  color: #555;
+  line-height: 1.7;
+  font-family: "SF Mono", "Fira Code", monospace;
+}
+
+/* ncu row */
+.ncu-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 1.2rem;
+}
+.ncu-cell {
+  border: 1px solid #e0e0e0;
+  padding: 0.7rem 1rem;
+  background: #fafafa;
+}
+.ncu-cell .ncu-k {
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #888;
+  margin-bottom: 0.2rem;
+}
+.ncu-cell .ncu-v { font-size: 0.95rem; font-weight: 700; }
+.ncu-cell--low .ncu-v { color: #c0392b; }
+.ncu-cell--high .ncu-v { color: #2e7d32; }
+.interp {
+  font-size: 0.8rem;
+  color: #555;
+  line-height: 1.65;
+  border-left: 3px solid #4a6fa5;
+  padding-left: 0.9rem;
+}
+
+/* results table */
+.results-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+  margin-top: 1rem;
+}
+.results-table th {
+  text-align: left;
+  padding: 0.5rem 0.8rem;
+  border-bottom: 2px solid #ddd;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #888;
+}
+.results-table td {
+  padding: 0.5rem 0.8rem;
+  border-bottom: 1px solid #eee;
+  color: #555;
+  font-family: "SF Mono", "Fira Code", monospace;
+}
+.results-table td:first-child { font-weight: 700; color: #1a1a1a; }
+.results-table .speedup { color: #2e7d32; font-weight: 700; }
+
+/* bottom bar */
+.bottom-bar {
+  border: 1px solid #e0e0e0;
+  border-left: 4px solid #8b6914;
+  background: #fff;
+  padding: 1rem 1.5rem;
+  font-size: 0.9rem;
+  color: #333;
+  line-height: 1.6;
+  margin-bottom: 2.5rem;
+}
+
+/* summary */
+.summary { border: 1px solid #e0e0e0; border-top: 3px solid #4a6fa5; background: #fff; padding: 2rem; }
+.summary h2 { font-size: 1.3rem; font-weight: 700; margin-bottom: 1.2rem; color: #2c3e50; }
+.summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem; }
+.insight { border: 1px solid #e8e8e3; padding: 1.2rem 1.5rem; background: #f9f9f6; }
+.insight h3 { font-size: 0.95rem; font-weight: 700; margin-bottom: 0.5rem; }
+.insight p { font-size: 0.82rem; color: #555; line-height: 1.7; margin-bottom: 0.5rem; }
+.insight p:last-child { margin-bottom: 0; }
+.insight code { background: #f0f0e8; padding: 0.1rem 0.3rem; font-size: 0.78rem; }
+.takeaway { border: 1px solid #e0e0e0; border-left: 4px solid #4a6fa5; background: #f5f8fb; padding: 1.2rem 1.5rem; }
+.takeaway h3 { font-size: 1rem; font-weight: 700; margin-bottom: 0.6rem; }
+.takeaway p { font-size: 0.85rem; color: #555; line-height: 1.7; margin-bottom: 0.6rem; }
+.takeaway p:last-child { margin-bottom: 0; }
+.takeaway code { background: #e8eef5; padding: 0.1rem 0.3rem; font-size: 0.8rem; }
+
+@media (max-width: 900px) {
+  .case-grid { grid-template-columns: 1fr; }
+  .compare-cols, .ncu-row { grid-template-columns: 1fr; }
+  .summary-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<div class="label">案例研究 / CUTLASS</div>
+<h1>评估融合 GEMM + Bias + ReLU Kernel 的 Cutlass 实现</h1>
+<p class="subtitle">源码是合法的 CUTLASS。真正的问题是：Hopper 原生执行路径到底有没有落地？</p>
+
+<!-- BODY_MARKER -->
+
+<div class="case-grid">
+  <!-- LEFT: PTX/SASS Review -->
+  <div class="panel">
+    <div class="panel-label">PTX / SASS 审查</div>
+    <h2>目标：CUTLASS example 12，<code>gemm_bias_relu</code></h2>
+    <p class="target-note">编译给 Hopper <span class="finding-text"><span class="mono">sm_90</span></span>；但观察到的执行路径更像一个 pre-Hopper（Hopper 之前）的 mainloop。</p>
+
+    <div class="finding">
+      <span class="finding-tag finding-tag--critical">Critical</span>
+      <span class="finding-text"><span class="mono">MMA_SYNC_ON_HOPPER</span>：出现了 128 条 <span class="mono">mma.sync</span> 指令，完全没有 <span class="mono">wgmma</span>。</span>
+    </div>
+    <div class="finding">
+      <span class="finding-tag finding-tag--risk">High</span>
+      <span class="finding-text"><span class="mono">MISSING_TMA</span>：没有观察到 TMA 支持的搬运路径。</span>
+    </div>
+    <div class="finding">
+      <span class="finding-tag finding-tag--risk">High</span>
+      <span class="finding-text"><span class="mono">MISSING_ASYNC_COPY</span>：global→shared 的搬运看起来是同步的。</span>
+    </div>
+
+    <div class="sub-label">观察到的路径</div>
+    <div class="code-block">
+      <span class="signal">mma.sync</span> x128<br>
+      ld.global + st.shared<br>
+      <span class="comment">// 没有 WGMMA / TMA 路径</span>
+    </div>
+
+    <div class="sub-label">模板族（Template Family）</div>
+    <p class="template-note"><code>@CuapPipelined</code> / <code>@MmaTensorOp</code> 风格的 mainloop，而不是 Hopper 的 warp-specialized TMA/WGMMA 路径。</p>
+  </div>
+
+  <!-- RIGHT: Comparison -->
+  <div class="panel">
+    <div class="panel-label">观察路径 vs Hopper 原生路径对比</div>
+
+    <div class="compare-cols">
+      <div class="compare-col compare-col--observed">
+        <div class="cc-label">Observed — EX12</div>
+        <ul>
+          <li>mma.sync</li>
+          <li>warp 级 MMA</li>
+          <li>ld.global + st.shared</li>
+          <li>同步搬运</li>
+        </ul>
+      </div>
+      <div class="compare-col compare-col--native">
+        <div class="cc-label">Hopper-Native — EX48</div>
+        <ul>
+          <li>wgmma</li>
+          <li>warp-specialized 流水线</li>
+          <li>TMA / 异步搬运</li>
+          <li>更高 tensor 利用率</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="ncu-row">
+      <div class="ncu-cell ncu-cell--low">
+        <div class="ncu-k">NCU — EX12</div>
+        <div class="ncu-v">~50%</div>
+        <div class="finding-text" style="margin-top:0.2rem;">tensor-core active cycles</div>
+      </div>
+      <div class="ncu-cell ncu-cell--high">
+        <div class="ncu-k">NCU — EX48</div>
+        <div class="ncu-v">~94%</div>
+        <div class="finding-text" style="margin-top:0.2rem;">tensor-core active cycles</div>
+      </div>
+    </div>
+
+    <div class="sub-label">解读（Interpretation）</div>
+    <p class="interp">分析器识别出：生成的执行路径<strong>没有落地 Hopper 原生的 WGMMA/TMA 结构</strong>。接下来由实测来决定——这件事对你的目标问题规模到底重不重要。</p>
+
+    <div class="sub-label">结果（Results）</div>
+    <table class="results-table">
+      <thead>
+        <tr><th>Shape</th><th>EX12</th><th>EX48</th><th>Speedup</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>4096³</td><td>212 TFLOPS</td><td>378 TFLOPS</td><td class="speedup">1.78×</td></tr>
+        <tr><td>8192³</td><td>209 TFLOPS</td><td>300 TFLOPS</td><td class="speedup">1.9×</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="bottom-bar">
+  <strong>源码是合法的 CUTLASS，结果也正确。但 SASS 审查暴露了真相：编译产物走的是 pre-Hopper 路径，tensor core 只有一半时间在干活。换成 Hopper 原生的 example 48，同样的数学运算快了 ~1.8×。</strong>
+</div>
+
+<!-- ============ Summary ============ -->
+<div class="summary">
+  <div class="label label--blue">总结与理解</div>
+  <h2>一个"代码正确但路径错了"的真实样本</h2>
+
+  <div class="summary-grid">
+    <div class="insight">
+      <h3>这是前面所有理论的实战落地</h3>
+      <p>前面的 slide 反复讲"AI/生成的 kernel 可能结构性失败"、"编译产物检查器能发现非原生路径"。这张 slide 给出了一个<strong>具体可复现的案例</strong>：CUTLASS example 12 的 <code>gemm_bias_relu</code>，源码完全合法、结果完全正确，但编译给 <code>sm_90</code> 之后，SASS 里全是 <code>mma.sync</code>（warp 级 MMA），一条 <code>wgmma</code>（warpgroup 级）都没有。</p>
+      <p>这正是"<strong>结构失败</strong>"的教科书例子——测试全绿，但硬件路径退回到了 Hopper 之前的形态。</p>
+    </div>
+
+    <div class="insight">
+      <h3>三个 finding 对应三个控制平面的回退</h3>
+      <p>检查器报的三个问题，恰好覆盖了 Hopper "微型运行时"的三个关键平面：</p>
+      <p><strong>张量平面</strong>——<code>MMA_SYNC_ON_HOPPER</code>：用了 warp 级 mma.sync，没用 warpgroup 级 wgmma。<br>
+         <strong>拷贝平面</strong>——<code>MISSING_TMA</code>：没用 TMA 硬件搬运单元。<br>
+         <strong>同步平面</strong>——<code>MISSING_ASYNC_COPY</code>：搬运是同步的，没有 producer/consumer 异步重叠。</p>
+      <p>三个平面同时回退,说明编译器整个选择了一条 pre-Hopper 的 mainloop 模板,而不是局部某条指令选错了。</p>
+    </div>
+
+    <div class="insight">
+      <h3>NCU 数字证实了 SASS 的判断:50% vs 94%</h3>
+      <p>这是 PTX/SASS 和 NCU <strong>协同工作</strong>的完美演示。SASS 审查提出假设:"没用 wgmma/TMA,tensor core 应该没吃饱"。NCU 随后量化确认:EX12 的 tensor-core active cycles 只有 ~50%,而 Hopper 原生的 EX48 达到 ~94%。</p>
+      <p>注意工作流的顺序——<strong>先用静态审查定位嫌疑,再用 profiler 量化坐实</strong>。如果只看 NCU 的 50%,你只知道"tensor core 没吃饱",但不知道为什么;SASS 告诉你"因为根本没生成 wgmma"。</p>
+    </div>
+
+    <div class="insight">
+      <h3>"是否重要"留给实测——这是关键的克制</h3>
+      <p>解读那段话说得很谨慎:"分析器识别出非原生路径,<strong>接下来由实测决定这是否重要</strong>"。这呼应了前面 slide 反复强调的边界:静态分析只提假设,不下性能结论。</p>
+      <p>但这个案例里,实测给出了明确答案——1.78× 到 1.9× 的差距,在大 shape 上是实打实的性能损失。换言之,这次"非原生路径"确实重要。检查器的价值在于:它<strong>在你跑任何 benchmark 之前</strong>就把嫌疑指出来了。</p>
+    </div>
+  </div>
+
+  <div class="takeaway">
+    <h3>为什么 example 12 会退回 pre-Hopper 路径?</h3>
+    <p>根本原因在"模板族"那一栏:example 12 用的是 <code>@CuapPipelined</code> / <code>@MmaTensorOp</code> 风格的 mainloop——这是 CUTLASS 里<strong>较老的、架构通用的</strong>模板。它能在 sm_90 上编译通过、跑出正确结果,但它的代码生成路径里<strong>根本没有 Hopper warp-specialized 的 TMA/WGMMA 结构</strong>。</p>
+    <p>而 example 48 用的是专门为 Hopper 设计的 warp-specialized 模板——producer warp 用 TMA 搬数据,consumer warpgroup 用 WGMMA 计算,通过 mbarrier 做异步流水线。同样是 GEMM+Bias+ReLU,同样的数学,但<strong>选错模板就等于把 Hopper 当 Ampere 用</strong>。</p>
+    <p>这个案例的终极教训:<strong>"我用了 CUTLASS" 不等于 "我用上了目标架构的原生路径"</strong>。CUTLASS 提供了几十个 example/模板,选哪个、模板内部怎么 lowering,直接决定了你拿到的是 212 TFLOPS 还是 378 TFLOPS。而这个差别,只有翻开 SASS 才看得见——源码层面两者都只是"调用 CUTLASS"。</p>
+  </div>
+</div>
+
+</body>
+</html>

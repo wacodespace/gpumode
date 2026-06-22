@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>从 PTX/SASS 中学习的四种实用方法</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: #fafafa;
+  color: #1a1a1a;
+  padding: 3rem 2rem;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+h1 {
+  font-size: 2.2rem;
+  font-weight: 800;
+  margin-bottom: 2.5rem;
+}
+.cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+  gap: 1.5rem;
+}
+.card {
+  border: 1px solid #e0e0e0;
+  background: #fff;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+}
+.label {
+  display: inline-block;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid #ccc;
+  margin-bottom: 1rem;
+  align-self: flex-start;
+}
+.label--gold { color: #8b6914; border-color: #d4a843; }
+.card h2 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin-bottom: 0.8rem;
+}
+.card p {
+  font-size: 0.82rem;
+  color: #555;
+  line-height: 1.6;
+  margin-bottom: 1.2rem;
+  flex-grow: 1;
+}
+.code-block {
+  background: #f5f5f0;
+  border: 1px solid #e8e8e3;
+  padding: 0.8rem 1rem;
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 0.75rem;
+  line-height: 1.8;
+  overflow-x: auto;
+}
+.code-block .inst { color: #c0392b; }
+.code-block .kw { color: #2980b9; }
+.code-block .comment { color: #888; }
+@media (max-width: 1000px) {
+  .cards { grid-template-columns: 1fr 1fr; }
+}
+.summary {
+  margin-top: 2.5rem;
+  border: 1px solid #e0e0e0;
+  border-top: 3px solid #4a6fa5;
+  background: #fff;
+  padding: 2rem;
+}
+.summary h2 {
+  font-size: 1.3rem;
+  font-weight: 700;
+  margin-bottom: 1.2rem;
+  color: #2c3e50;
+}
+.summary-label {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid #4a6fa5;
+  color: #4a6fa5;
+  margin-bottom: 0.8rem;
+}
+.summary-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+.insight {
+  border: 1px solid #e8e8e3;
+  padding: 1.2rem 1.5rem;
+  background: #f9f9f6;
+}
+.insight h3 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+.insight p {
+  font-size: 0.82rem;
+  color: #555;
+  line-height: 1.7;
+  margin-bottom: 0.5rem;
+}
+.insight p:last-child { margin-bottom: 0; }
+.takeaway {
+  border: 1px solid #e0e0e0;
+  border-left: 4px solid #4a6fa5;
+  background: #f5f8fb;
+  padding: 1.2rem 1.5rem;
+}
+.takeaway h3 {
+  font-size: 1rem;
+  font-weight: 700;
+  margin-bottom: 0.6rem;
+}
+.takeaway p {
+  font-size: 0.85rem;
+  color: #555;
+  line-height: 1.7;
+  margin-bottom: 0.6rem;
+}
+.takeaway p:last-child { margin-bottom: 0; }
+.progression {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.5rem;
+  margin: 1rem 0;
+}
+.progression-step {
+  background: #f5f5f0;
+  border: 1px solid #e0e0e0;
+  padding: 0.6rem;
+  text-align: center;
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+.progression-step .step-num {
+  font-weight: 700;
+  margin-bottom: 0.2rem;
+}
+.progression-step .step-q {
+  color: #555;
+  margin-bottom: 0.2rem;
+}
+.progression-step .step-layer {
+  color: #888;
+  font-size: 0.7rem;
+}
+.arrow-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+  margin: 0.3rem 0;
+  padding: 0 calc(12.5%);
+}
+.arrow-cell {
+  text-align: center;
+  color: #bbb;
+  font-size: 0.9rem;
+}
+@media (max-width: 600px) {
+  .cards { grid-template-columns: 1fr; }
+  .summary-grid { grid-template-columns: 1fr; }
+  .progression { grid-template-columns: 1fr 1fr; }
+}
+</style>
+</head>
+<body>
+
+<h1>从 PTX/SASS 中学习的四种实用方法</h1>
+
+<div class="cards">
+  <div class="card">
+    <div class="label">1 / 访存宽度</div>
+    <h2>数据搬运是否被加宽了？</h2>
+    <p>向量化拷贝路径是最直接的观察入口：源码写的是 copy，SASS 能揭示实际走的是标量搬运还是 128-bit 宽向量搬运。</p>
+    <div class="code-block">
+      <span class="inst">LDG.E</span>     R3, desc[UR4][R2.64]<br>
+      <span class="inst">STG.E</span>     desc[UR4][R4.64], R3<br>
+      <br>
+      <span class="kw">LDG.E.128</span> R8, desc[UR4][R4.64]<br>
+      <span class="kw">STG.E.128</span> desc[UR4][R2.64], R8
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="label">2 / Warp 集体行为</div>
+    <h2>线程之间是否正确协作？</h2>
+    <p><code>ldmatrix</code> 能揭示一个 warp 如何集体地将矩阵片段从 shared memory 搬入寄存器，为 MMA 运算做准备。</p>
+    <div class="code-block">
+      <span class="inst">ldmatrix.sync.aligned</span><br>
+      &nbsp;&nbsp;.m8n8.x4.shared.b16<br>
+      &nbsp;&nbsp;{%r0, %r1, %r2, %r3}, [%rd1];<br>
+      <br>
+      <span class="comment">// 线程组协作加载矩阵行</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="label label--gold">3 / 指令选择</div>
+    <h2>DSL 是否生成了正确的运算？</h2>
+    <p>如果 lowering 过程插入了可避免的类型转换，内联 PTX 可以更直接地表达硬件运算。</p>
+    <div class="code-block">
+      <span class="inst">fpext</span> bf16 -> f32<br>
+      asm "<span class="kw">tanh.approx.f32</span>"<br>
+      <span class="inst">fptrunc</span> f32 -> bf16<br>
+      <br>
+      asm "<span class="kw">tanh.approx.bf16</span>"
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="label label--gold">4 / 原生编排</div>
+    <h2>架构特定路径是否落地了？</h2>
+    <p>在 Hopper 上，WGMMA 和 TMA 意味着 warpgroup 执行、描述符配置、分级 shared memory 和显式协调。</p>
+    <div class="code-block">
+      <span class="kw">WGMMA</span>    <span class="comment">// warpgroup MMA</span><br>
+      <span class="kw">TMA</span>      <span class="comment">// GMEM ↔ SMEM 传输</span><br>
+      <span class="inst">mbarrier</span><br>
+      <span class="inst">ARRIVES</span>
+    </div>
+  </div>
+</div>
+
+<div class="summary">
+  <div class="summary-label">总结与理解</div>
+  <h2>这四个视角的内在逻辑</h2>
+
+  <div class="summary-grid">
+    <div class="insight">
+      <h3>四个问题是按抽象层级递进排列的</h3>
+      <p>第 1 个问题（访存宽度）是最"机械"的检查——看一条 load/store 指令的位宽后缀就行。第 4 个问题（架构编排）则需要理解整个 Hopper 执行模型：warpgroup 是什么、TMA 描述符怎么配、mbarrier 怎么协调流水线。</p>
+      <p>这个递进是有意设计的：你可以从第 1 层开始获得收益，不需要一上来就理解完整的架构执行模型。</p>
+    </div>
+
+    <div class="insight">
+      <h3>前两个看 SASS，后两个看 PTX（或两者都看）</h3>
+      <p>问题 1（<code>LDG.E</code> vs <code>LDG.E.128</code>）和问题 2（<code>ldmatrix</code>）展示的是 SASS 级别的指令——这是硬件真正执行的东西。问题 3 和 4 则更多涉及 PTX 层面的选择（inline asm、WGMMA），因为这些决策发生在编译器的前端/中间层。实际排查时两层都会看，但每个问题有一个更自然的"入口层"。</p>
+    </div>
+
+    <div class="insight">
+      <h3>问题 3 是 inline PTX 的正面用例</h3>
+      <p>上一张 slide 警告了 inline PTX 的风险，这里展示了它的价值。例子很具体：<code>tanh.approx.f32</code> 需要先 <code>fpext bf16 → f32</code> 再 <code>fptrunc f32 → bf16</code>，两次类型转换是编译器 lowering 引入的开销。而 <code>tanh.approx.bf16</code> 直接在 bf16 上算，跳过了两次不必要的精度转换。这就是"DSL 没给你最好的指令选择"的典型场景——你通过读汇编发现了问题，再通过写 inline PTX 绕过它。</p>
+    </div>
+
+    <div class="insight">
+      <h3>问题 4 本质上是在问"新硬件特性是否真的被使用了"</h3>
+      <p>每一代 GPU 架构都引入新的执行路径（Ampere 的异步拷贝、Hopper 的 TMA 和 WGMMA）。框架和库的文档可能声称"支持 Hopper"，但实际编译产物里有没有出现 <code>WGMMA</code>、<code>TMA</code>、<code>mbarrier</code> 这些指令，是唯一的硬证据。如果你在 H100 上跑 kernel 却看不到这些指令，说明你的代码走的还是上一代的执行路径——性能天花板可能就差在这里。</p>
+    </div>
+  </div>
+
+  <div class="takeaway">
+    <h3>一个实用的排查思路：从简单到复杂</h3>
+    <p>这四个问题可以作为一个快速的 kernel 审计清单。按顺序过一遍，每一步都是独立的 pass/fail 判断：</p>
+    <div class="progression">
+      <div class="progression-step">
+        <div class="step-num">① 访存宽度</div>
+        <div class="step-q">看到 .128 了吗？</div>
+        <div class="step-layer">SASS · 5 秒</div>
+      </div>
+      <div class="progression-step">
+        <div class="step-num">② Warp 协作</div>
+        <div class="step-q">ldmatrix 在吗？</div>
+        <div class="step-layer">SASS · 10 秒</div>
+      </div>
+      <div class="progression-step">
+        <div class="step-num">③ 指令选择</div>
+        <div class="step-q">有冗余类型转换吗？</div>
+        <div class="step-layer">PTX · 1 分钟</div>
+      </div>
+      <div class="progression-step">
+        <div class="step-num">④ 架构路径</div>
+        <div class="step-q">WGMMA/TMA 落地了吗？</div>
+        <div class="step-layer">PTX+SASS · 2 分钟</div>
+      </div>
+    </div>
+    <p>注意时间估算：前两个是 grep 级别的操作（搜一个指令后缀或助记符），后两个需要稍微理解上下文。但即使是最复杂的第 4 个问题，也不要求你读懂整个 kernel 的汇编——你只需要确认特定指令的<strong>存在与否</strong>。</p>
+  </div>
+</div>
+
+</body>
+</html>

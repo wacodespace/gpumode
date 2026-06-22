@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>现代 Kernel 正在变成微型运行时</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: #fafafa;
+  color: #1a1a1a;
+  padding: 3rem 2rem;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+.label {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid #ccc;
+  margin-bottom: 0.8rem;
+}
+.label--red { color: #a04040; border-color: #c88; }
+.label--gold { color: #8b6914; border-color: #d4a843; }
+.label--blue { color: #4a6fa5; border-color: #4a6fa5; }
+h1 {
+  font-size: 2rem;
+  font-weight: 800;
+  margin-bottom: 0.5rem;
+}
+.subtitle {
+  font-size: 0.92rem;
+  color: #666;
+  margin-bottom: 2.5rem;
+}
+
+/* main three-column layout */
+.main-layout {
+  display: grid;
+  grid-template-columns: 240px 1fr 280px;
+  gap: 1.8rem;
+  margin-bottom: 2rem;
+}
+
+/* left: control planes */
+.planes h2 {
+  font-size: 1rem;
+  font-weight: 700;
+  margin-bottom: 1rem;
+}
+.plane {
+  margin-bottom: 1rem;
+  border: 1px solid #e0e0e0;
+  background: #fff;
+  padding: 0.8rem;
+}
+.plane-name {
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #888;
+  margin-bottom: 0.4rem;
+}
+.plane-chain {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+}
+.plane-node {
+  background: #f5f5f0;
+  border: 1px solid #e0e0e0;
+  padding: 0.2rem 0.5rem;
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 0.68rem;
+  white-space: nowrap;
+}
+.plane-arr { color: #bbb; font-size: 0.8rem; }
+
+/* center: topology diagram */
+.topology {
+  border: 1px solid #e0e0e0;
+  background: #fff;
+  padding: 1.5rem;
+  position: relative;
+  min-height: 420px;
+}
+.topo-node {
+  border: 1px solid #ddd;
+  background: #fff;
+  padding: 0.6rem 0.8rem;
+  position: absolute;
+  min-width: 120px;
+}
+.topo-node .topo-label {
+  font-size: 0.55rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #888;
+  margin-bottom: 0.3rem;
+}
+.topo-node .topo-content {
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 0.75rem;
+  line-height: 1.6;
+}
+.topo-node .topo-desc {
+  font-size: 0.72rem;
+  color: #666;
+  line-height: 1.4;
+  font-family: -apple-system, sans-serif;
+}
+.topo-node--producer { top: 1rem; left: 0.5rem; }
+.topo-node--copy { top: 1rem; right: 0.5rem; }
+.topo-node--barrier { top: 45%; left: 50%; transform: translate(-50%, -50%); border-color: #aaa; }
+.topo-node--consumer { top: 28%; right: 0.5rem; }
+.topo-node--memory { bottom: 5.5rem; left: 50%; transform: translateX(-50%); }
+.topo-node--failure { bottom: 1rem; right: 0.5rem; border-color: #c88; background: #fdf8f8; }
+
+/* SVG lines */
+.topo-svg {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  pointer-events: none;
+}
+.topo-svg line {
+  stroke: #ccc;
+  stroke-width: 1;
+}
+
+/* right: callout cards */
+.callouts {
+  display: flex;
+  flex-direction: column;
+  gap: 1.2rem;
+}
+.callout {
+  border: 1px solid #e0e0e0;
+  background: #fff;
+  padding: 1.2rem;
+}
+.callout h3 {
+  font-size: 1.1rem;
+  font-weight: 800;
+  margin-bottom: 0.5rem;
+  line-height: 1.3;
+}
+.callout p {
+  font-size: 0.8rem;
+  color: #555;
+  line-height: 1.6;
+}
+
+/* bottom bar */
+.bottom-bar {
+  border: 1px solid #e0e0e0;
+  border-left: 4px solid #8b6914;
+  background: #fff;
+  padding: 1rem 1.5rem;
+  font-size: 0.9rem;
+  color: #333;
+  line-height: 1.6;
+  margin-bottom: 2.5rem;
+}
+
+/* summary */
+.summary {
+  border: 1px solid #e0e0e0;
+  border-top: 3px solid #4a6fa5;
+  background: #fff;
+  padding: 2rem;
+}
+.summary h2 {
+  font-size: 1.3rem;
+  font-weight: 700;
+  margin-bottom: 1.2rem;
+  color: #2c3e50;
+}
+.summary-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+.insight {
+  border: 1px solid #e8e8e3;
+  padding: 1.2rem 1.5rem;
+  background: #f9f9f6;
+}
+.insight h3 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+.insight p {
+  font-size: 0.82rem;
+  color: #555;
+  line-height: 1.7;
+  margin-bottom: 0.5rem;
+}
+.insight p:last-child { margin-bottom: 0; }
+.takeaway {
+  border: 1px solid #e0e0e0;
+  border-left: 4px solid #4a6fa5;
+  background: #f5f8fb;
+  padding: 1.2rem 1.5rem;
+}
+.takeaway h3 {
+  font-size: 1rem;
+  font-weight: 700;
+  margin-bottom: 0.6rem;
+}
+.takeaway p {
+  font-size: 0.85rem;
+  color: #555;
+  line-height: 1.7;
+  margin-bottom: 0.6rem;
+}
+.takeaway p:last-child { margin-bottom: 0; }
+
+/* comparison table */
+.era-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+  margin: 1rem 0;
+}
+.era-table th {
+  text-align: left;
+  padding: 0.5rem 0.7rem;
+  border-bottom: 2px solid #ddd;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #888;
+}
+.era-table td {
+  padding: 0.5rem 0.7rem;
+  border-bottom: 1px solid #eee;
+  color: #555;
+  line-height: 1.4;
+}
+.era-table td:first-child {
+  font-weight: 600;
+  color: #1a1a1a;
+  white-space: nowrap;
+}
+
+@media (max-width: 1000px) {
+  .main-layout { grid-template-columns: 1fr; }
+  .topology { min-height: auto; position: static; }
+  .topo-node { position: static; transform: none; margin-bottom: 0.8rem; }
+  .topo-svg { display: none; }
+  .summary-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<div class="label">执行拓扑</div>
+<h1>现代 Kernel 正在变成微型运行时</h1>
+<p class="subtitle">性能越来越取决于生成的协调结构，而不仅仅是算术吞吐量。</p>
+
+<div class="main-layout">
+  <!-- Left: Control Planes -->
+  <div class="planes">
+    <h2>五个控制平面</h2>
+
+    <div class="plane">
+      <div class="plane-name">拷贝平面</div>
+      <div class="plane-chain">
+        <span class="plane-node">TMA</span>
+        <span class="plane-arr">→</span>
+        <span class="plane-node">UTMALDG</span>
+        <span class="plane-arr">→</span>
+        <span class="plane-node">cp.async.bulk</span>
+      </div>
+    </div>
+
+    <div class="plane">
+      <div class="plane-name">同步平面</div>
+      <div class="plane-chain">
+        <span class="plane-node">mbarrier</span>
+        <span class="plane-arr">→</span>
+        <span class="plane-node">ARRIVES</span>
+        <span class="plane-arr">→</span>
+        <span class="plane-node">wait</span>
+      </div>
+    </div>
+
+    <div class="plane">
+      <div class="plane-name">张量平面</div>
+      <div class="plane-chain">
+        <span class="plane-node">WGMMA</span>
+        <span class="plane-arr">→</span>
+        <span class="plane-node">HGMMA</span>
+        <span class="plane-arr">→</span>
+        <span class="plane-node">commit_group</span>
+      </div>
+    </div>
+
+    <div class="plane">
+      <div class="plane-name">内存平面</div>
+      <div class="plane-chain">
+        <span class="plane-node">shared</span>
+        <span class="plane-arr">→</span>
+        <span class="plane-node">local</span>
+        <span class="plane-arr">→</span>
+        <span class="plane-node">STL / LDL</span>
+      </div>
+    </div>
+
+    <div class="plane">
+      <div class="plane-name">控制平面</div>
+      <div class="plane-chain">
+        <span class="plane-node">producer</span>
+        <span class="plane-arr">→</span>
+        <span class="plane-node">consumer</span>
+        <span class="plane-arr">→</span>
+        <span class="plane-node">cluster</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Center: Topology Diagram -->
+  <div class="topology">
+    <div class="topo-node topo-node--producer">
+      <div class="topo-label">Producer Warps</div>
+      <div class="topo-desc">发起数据搬运<br>管理 tile 分阶段</div>
+    </div>
+
+    <div class="topo-node topo-node--copy">
+      <div class="topo-label">拷贝引擎</div>
+      <div class="topo-content">UTMALDG<br>cp.async.bulk</div>
+    </div>
+
+    <div class="topo-node topo-node--consumer" style="top: 35%;">
+      <div class="topo-label">Consumer Warpgroup</div>
+      <div class="topo-content">WGMMA / HGMMA</div>
+    </div>
+
+    <div class="topo-node topo-node--barrier">
+      <div class="topo-label">Barrier 状态</div>
+      <div class="topo-content">mbarrier<br>ARRIVES</div>
+    </div>
+
+    <div class="topo-node topo-node--memory">
+      <div class="topo-label">本地存储</div>
+      <div class="topo-content">shared, local,<br>tensor memory, spill paths</div>
+    </div>
+
+    <div class="topo-node topo-node--failure">
+      <div class="topo-label">故障面</div>
+      <div class="topo-content">fallbacks,<br>scalarization,<br>drains, spills</div>
+    </div>
+  </div>
+
+  <!-- Right: Callout Cards -->
+  <div class="callouts">
+    <div class="callout">
+      <h3>FLOPs 充裕，协调稀缺。</h3>
+      <p>瓶颈往往在于生成的执行路径是否高效地协调了拷贝引擎、tensor 引擎、内存分阶段、barrier 和 store 操作。</p>
+    </div>
+
+    <div class="callout">
+      <div class="label label--gold">Mega-kernel</div>
+      <h3>Mega-kernel 让这件事更重要</h3>
+      <p>融合和生成的 kernel 越来越像微型运行时——带有显式控制平面来管理本地存储、异步引擎、tensor 引擎和集群级调度。</p>
+    </div>
+  </div>
+</div>
+
+<div class="bottom-bar">
+  <strong>PTX/SASS 是微型运行时变得可检查的地方。</strong>
+</div>
+
+<!-- ============ Summary ============ -->
+<div class="summary">
+  <div class="label label--blue">总结与理解</div>
+  <h2>从"一段计算"到"一个调度系统"</h2>
+
+  <div class="summary-grid">
+    <div class="insight">
+      <h3>"微型运行时"这个比喻非常精确</h3>
+      <p>传统的 kernel 就是一段计算代码——读数据、算、写回。现代 Hopper/Blackwell 上的高性能 kernel 更像一个<strong>小型操作系统</strong>：它有自己的"进程"（producer warp 和 consumer warpgroup），有自己的"IPC 机制"（mbarrier），有自己的"内存管理"（shared memory 的分阶段使用），有自己的"I/O 子系统"（TMA 拷贝引擎）。</p>
+      <p>这些组件的协调质量决定了性能，而不是某一条指令的吞吐量。</p>
+    </div>
+
+    <div class="insight">
+      <h3>五个控制平面 = 五个可以独立出错的维度</h3>
+      <p>Slide 左侧列出的五个平面不是装饰性的分类，而是<strong>五个独立的检查维度</strong>。每个平面都可能出问题：</p>
+      <p>拷贝平面——用了 TMA 还是回退到了线程级拷贝？<br>
+         同步平面——mbarrier 阶段划分正确吗？arrive/wait 配对了吗？<br>
+         张量平面——用了 WGMMA 还是回退到了 HMMA？<br>
+         内存平面——有没有意外的 local spill？<br>
+         控制平面——producer/consumer 分工是否落地？</p>
+    </div>
+
+    <div class="insight">
+      <h3>"FLOPs 充裕，协调稀缺" 是整个 slide deck 的主题句</h3>
+      <p>现代 GPU 的 tensor core 算力已经远远超过了大多数 kernel 的需求。H100 的 FP16 峰值是 ~2 PFLOPS——瓶颈几乎不可能是"算得不够快"。真正的瓶颈是：数据能不能及时喂到 tensor core？搬运和计算能不能重叠？同步有没有引入不必要的等待？</p>
+      <p>这就是为什么汇编审查的重点从"看有没有用对的算术指令"转向了"看协调结构是否高效"。</p>
+    </div>
+
+    <div class="insight">
+      <h3>Mega-kernel 把这个问题推到了极端</h3>
+      <p>Kernel fusion（将多个操作融合成一个 kernel）是当前最重要的优化手段之一。但融合之后的 kernel 变得更像一个微型运行时：它需要管理更多的 shared memory 阶段、更复杂的 producer/consumer 流水线、更多的 barrier 同步点。</p>
+      <p>如果你用的是 Triton 这样的编译器，或者 AI agent 生成的融合 kernel，你面对的不是"一条指令对不对"的问题，而是"<strong>整个调度拓扑是否合理</strong>"。这只能通过检查 PTX/SASS 来判断。</p>
+    </div>
+  </div>
+
+  <div class="takeaway">
+    <h3>新旧 kernel 的本质区别</h3>
+    <p>从"计算核心"到"微型运行时"的转变，可以用这张表来概括：</p>
+    <table class="era-table">
+      <thead>
+        <tr><th>维度</th><th>传统 Kernel（Ampere 及之前）</th><th>现代 Kernel（Hopper / Blackwell）</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>核心抽象</td>
+          <td>一段计算代码</td>
+          <td>一个带调度的运行时</td>
+        </tr>
+        <tr>
+          <td>性能瓶颈</td>
+          <td>算术吞吐 + 访存带宽</td>
+          <td>协调效率 + 流水线利用率</td>
+        </tr>
+        <tr>
+          <td>数据搬运</td>
+          <td>线程各自搬（cp.async）</td>
+          <td>硬件引擎搬（TMA），与计算重叠</td>
+        </tr>
+        <tr>
+          <td>计算单元</td>
+          <td>Per-warp MMA</td>
+          <td>Warpgroup MMA（4 warp 协作）</td>
+        </tr>
+        <tr>
+          <td>同步机制</td>
+          <td>bar.sync（简单栅栏）</td>
+          <td>mbarrier + arrive/wait（流水线阶段）</td>
+        </tr>
+        <tr>
+          <td>角色分工</td>
+          <td>所有 warp 做同样的事</td>
+          <td>producer warp 搬数据，consumer warpgroup 算</td>
+        </tr>
+        <tr>
+          <td>汇编审查重点</td>
+          <td>有没有用对指令？有没有 spill？</td>
+          <td>调度拓扑对吗？流水线跑起来了吗？</td>
+        </tr>
+      </tbody>
+    </table>
+    <p>Slide 底部的结论一句话总结了这一切：<strong>PTX/SASS 是这个微型运行时变得可检查的地方</strong>——源码层你看到的是高层 API 调用，只有在汇编层，这些协调结构才以可审计的形式暴露出来。</p>
+  </div>
+</div>
+
+</body>
+</html>

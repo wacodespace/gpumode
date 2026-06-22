@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NIXL 设计 — 统一数据传输架构</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+            background: #f5f5f5;
+            color: #333;
+            line-height: 1.6;
+            padding: 40px 20px;
+        }
+
+        .slide-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: #fff;
+            border-radius: 16px;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+            padding: 48px 56px;
+        }
+
+        .slide-title {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .slide-title h1 {
+            font-size: 30px;
+            font-weight: 700;
+            color: #1a1a1a;
+        }
+
+        /* 三栏布局 */
+        .arch-layout {
+            display: flex;
+            gap: 24px;
+            align-items: stretch;
+            margin-bottom: 28px;
+        }
+
+        /* 通用虚线框 */
+        .dashed-box {
+            border: 2px dashed #c5e1a5;
+            border-radius: 12px;
+            padding: 20px;
+        }
+
+        .dashed-box .box-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: #666;
+            margin-bottom: 14px;
+            text-align: center;
+        }
+
+        /* 左侧：内存空间 */
+        .memory-spaces {
+            flex: 0 0 180px;
+        }
+
+        .mem-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            justify-content: center;
+        }
+
+        .mem-chip {
+            background: #f5a623;
+            color: #fff;
+            font-size: 12px;
+            font-weight: 700;
+            padding: 8px 14px;
+            border-radius: 6px;
+            text-align: center;
+            min-width: 60px;
+            box-shadow: 0 1px 4px rgba(245, 166, 35, 0.3);
+        }
+
+        /* 中间：Transfer Agent */
+        .center-col {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        /* 上方注释 */
+        .top-annotations {
+            display: flex;
+            justify-content: center;
+            gap: 32px;
+            margin-bottom: 4px;
+        }
+
+        .annotation {
+            text-align: center;
+            font-size: 12px;
+            color: #555;
+            max-width: 180px;
+            line-height: 1.5;
+        }
+
+        .annotation .arrow-down {
+            color: #9c27b0;
+            font-size: 20px;
+        }
+
+        /* North-Bound API */
+        .api-bar {
+            text-align: center;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 700;
+            color: #fff;
+        }
+
+        .api-bar.north {
+            background: #f5a623;
+        }
+
+        .api-bar.south {
+            background: #f5a623;
+        }
+
+        /* Agent 主体 */
+        .agent-body {
+            background: #e8e8e8;
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .agent-body .agent-title {
+            font-size: 18px;
+            font-weight: 700;
+            color: #333;
+            margin-bottom: 16px;
+        }
+
+        .agent-components {
+            display: flex;
+            justify-content: center;
+            gap: 24px;
+        }
+
+        .agent-bubble {
+            background: #8bc34a;
+            color: #fff;
+            border-radius: 50%;
+            width: 120px;
+            height: 120px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: 600;
+            text-align: center;
+            line-height: 1.3;
+            box-shadow: 0 2px 8px rgba(139, 195, 74, 0.3);
+        }
+
+        /* 箭头连接符 */
+        .arrow-connector {
+            text-align: center;
+            color: #9c27b0;
+            font-size: 22px;
+            line-height: 1;
+        }
+
+        /* 右侧：远程 Agent 信息 */
+        .remote-info {
+            flex: 0 0 200px;
+        }
+
+        .remote-chips {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .remote-chip {
+            background: #f5a623;
+            color: #fff;
+            font-size: 12px;
+            font-weight: 600;
+            padding: 12px 14px;
+            border-radius: 6px;
+            text-align: center;
+            box-shadow: 0 1px 4px rgba(245, 166, 35, 0.3);
+            line-height: 1.4;
+        }
+
+        /* 底部：Backend Plugins */
+        .plugins-section {
+            margin-top: 8px;
+        }
+
+        .plugins-label {
+            text-align: center;
+            font-size: 14px;
+            font-weight: 600;
+            color: #555;
+            margin-bottom: 12px;
+        }
+
+        .plugins-row {
+            display: flex;
+            justify-content: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .plugin-chip {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 14px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 700;
+            color: #fff;
+        }
+
+        .plugin-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+
+        .plugin-chip.ucx      { background: #00796b; }
+        .plugin-chip.mc       { background: #558b2f; }
+        .plugin-chip.libfab   { background: #827717; }
+        .plugin-chip.gpunet   { background: #33691e; }
+        .plugin-chip.posix    { background: #4a148c; }
+        .plugin-chip.gds      { background: #880e4f; }
+        .plugin-chip.hf3fs    { background: #1565c0; }
+        .plugin-chip.obj      { background: #e65100; }
+        .plugin-chip.custom   { background: #757575; }
+
+        /* 左右标注 */
+        .side-label {
+            text-align: center;
+            font-size: 12px;
+            color: #888;
+            margin-top: 8px;
+            font-style: italic;
+        }
+
+        /* 总结 */
+        .summary-section {
+            margin-top: 44px;
+            border-top: 2px solid #f5a623;
+            padding-top: 28px;
+        }
+
+        .summary-section h2 {
+            font-size: 22px;
+            color: #333;
+            margin-bottom: 16px;
+        }
+
+        .summary-section > ul {
+            list-style: none;
+            padding: 0;
+        }
+
+        .summary-section > ul > li {
+            position: relative;
+            padding: 8px 0 8px 20px;
+            font-size: 15px;
+            color: #444;
+            line-height: 1.75;
+        }
+
+        .summary-section > ul > li::before {
+            content: "•";
+            position: absolute;
+            left: 0;
+            color: #f5a623;
+            font-weight: 700;
+        }
+
+        .summary-section li strong {
+            color: #222;
+        }
+
+        .sub-list {
+            list-style: none;
+            padding-left: 20px;
+            margin-top: 6px;
+        }
+
+        .sub-list li {
+            position: relative;
+            padding: 3px 0 3px 16px;
+            font-size: 14px;
+            color: #555;
+        }
+
+        .sub-list li::before {
+            content: "–";
+            position: absolute;
+            left: 0;
+            color: #999;
+        }
+    </style>
+</head>
+<body>
+
+<div class="slide-container">
+
+    <div class="slide-title">
+        <h1>NIXL 设计</h1>
+    </div>
+
+    <!-- 架构图 -->
+    <div class="arch-layout">
+
+        <!-- 左侧：注册到 Agent 的内存空间 -->
+        <div class="memory-spaces dashed-box">
+            <div class="box-title">注册到 Agent 的内存空间</div>
+            <div class="mem-chips">
+                <div class="mem-chip">DRAM</div>
+                <div class="mem-chip">VRAM</div>
+                <div class="mem-chip">FILE</div>
+                <div class="mem-chip">NVMe/<br>Block</div>
+                <div class="mem-chip">OBJ</div>
+            </div>
+            <div class="side-label">为后端提供 Bookkeeping</div>
+        </div>
+
+        <!-- 中间：Transfer Agent -->
+        <div class="center-col">
+
+            <div class="top-annotations">
+                <div class="annotation">
+                    NIXL 跨节点、跨内存的<br>buffer list 原语
+                    <div class="arrow-down">&darr;</div>
+                </div>
+                <div class="annotation">
+                    NIXL Transfer Handle<br>支持 repost 能力
+                    <div class="arrow-down">&darr;</div>
+                </div>
+            </div>
+
+            <div class="api-bar north">North-Bound NIXL API（北向 API）</div>
+
+            <div class="agent-body">
+                <div class="agent-title">Transfer Agent</div>
+                <div class="agent-components">
+                    <div class="agent-bubble">Memory<br>Section<br>内存段</div>
+                    <div class="agent-bubble">Metadata<br>Handler<br>元数据处理</div>
+                </div>
+            </div>
+
+            <div class="api-bar south">South-Bound Backend API（南向后端 API）</div>
+
+            <div class="arrow-connector">&darr;&nbsp;&darr;&nbsp;&darr;</div>
+
+            <!-- Backend Plugins -->
+            <div class="plugins-section">
+                <div class="plugins-row">
+                    <div class="plugin-chip ucx">UCX</div>
+                    <div class="plugin-chip mc">MC</div>
+                    <div class="plugin-chip libfab">libfabric</div>
+                    <div class="plugin-chip gpunet">GPU-NetIO</div>
+                    <div class="plugin-chip posix">POSIX</div>
+                    <div class="plugin-chip gds">GDS</div>
+                    <div class="plugin-chip hf3fs">HF3FS</div>
+                    <div class="plugin-chip obj">OBJ</div>
+                    <div class="plugin-chip custom">自定义后端</div>
+                </div>
+                <div class="plugins-label">传输后端插件</div>
+            </div>
+        </div>
+
+        <!-- 右侧：远程 Agent 信息 -->
+        <div class="remote-info dashed-box">
+            <div class="box-title">本地缓存的远程 Agent 信息</div>
+            <div class="remote-chips">
+                <div class="remote-chip">Backend<br>Connection Info<br>后端连接信息</div>
+                <div class="remote-chip">Memory Section<br>Remote Identifiers<br>内存段远程标识符</div>
+            </div>
+            <div class="side-label">为后端提供元数据处理</div>
+        </div>
+
+    </div>
+
+    <!-- 总结 -->
+    <div class="summary-section">
+        <h2>内容总结</h2>
+        <ul>
+            <li><strong>NIXL（NVIDIA Inference Xfer Library）</strong>是一个统一的数据传输抽象层，设计目标是让应用程序能够透明地在不同内存类型（DRAM、VRAM、文件、NVMe、对象存储）和不同传输后端之间移动数据。</li>
+            <li><strong>核心架构 —— Transfer Agent：</strong>每个节点运行一个 Transfer Agent，它包含两个关键组件：
+                <ul class="sub-list">
+                    <li><strong>Memory Section（内存段）</strong> — 管理注册到 Agent 的各种内存空间的元信息，为后端提供 bookkeeping（记账/跟踪）。</li>
+                    <li><strong>Metadata Handler（元数据处理器）</strong> — 管理远程 Agent 的连接信息和内存段远程标识符，使本地 Agent 能定位远端数据。</li>
+                </ul>
+            </li>
+            <li><strong>双向 API 分层设计：</strong>
+                <ul class="sub-list">
+                    <li><strong>北向 API（North-Bound）</strong> — 面向应用程序，提供跨节点、跨内存类型的 buffer list 传输原语，以及可重复使用的 Transfer Handle（支持 repost）。</li>
+                    <li><strong>南向 API（South-Bound）</strong> — 面向传输后端插件，定义统一的后端接口规范。</li>
+                </ul>
+            </li>
+            <li><strong>五种内存空间：</strong>DRAM（主机内存）、VRAM（GPU 显存）、FILE（文件系统）、NVMe/Block（块设备）、OBJ（对象存储），全部通过统一接口注册到 Agent。</li>
+            <li><strong>九种传输后端插件：</strong>
+                <ul class="sub-list">
+                    <li><strong>UCX</strong> — 统一通信框架（InfiniBand/RoCE/共享内存）</li>
+                    <li><strong>MC</strong> — 内存拷贝（节点内 GPU↔CPU）</li>
+                    <li><strong>libfabric</strong> — AWS EFA 等 fabric 传输</li>
+                    <li><strong>GPU-NetIO</strong> — GPU 直接网络 I/O</li>
+                    <li><strong>POSIX</strong> — 标准文件系统 I/O</li>
+                    <li><strong>GDS</strong> — GPUDirect Storage（GPU 直接访问存储）</li>
+                    <li><strong>HF3FS</strong> — 高性能分布式文件系统</li>
+                    <li><strong>OBJ</strong> — 对象存储（S3 等）</li>
+                    <li><strong>自定义后端</strong> — 可扩展插件接口</li>
+                </ul>
+            </li>
+            <li><strong>核心价值：</strong>应用只需面向北向 API 编程，NIXL 根据源/目标内存类型和可用硬件自动选择最优后端路径。这在推理场景（如 KV-cache 迁移、模型权重预取、checkpoint 加载）中尤为重要，因为数据可能跨越 GPU、主机内存、NVMe 和远程存储多种介质。</li>
+        </ul>
+    </div>
+
+</div>
+
+</body>
+</html>

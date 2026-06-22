@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>多层级 KV Cache 卸载 — 缓存复用与无限上下文</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif;
+            background: #0a0a0a;
+            color: #e0e0e0;
+            min-height: 100vh;
+            padding: 40px 20px;
+        }
+
+        .container { max-width: 1080px; margin: 0 auto; }
+
+        h1 { text-align: center; font-size: 2.1rem; color: #fff; margin-bottom: 6px; }
+        .subtitle { text-align: center; color: #76b900; font-size: 1rem; margin-bottom: 48px; }
+
+        /* ---- 三层存储层级 ---- */
+        .tiers {
+            display: flex;
+            flex-direction: column;
+            gap: 0;
+            margin-bottom: 40px;
+        }
+
+        .tier-row {
+            display: flex;
+            align-items: stretch;
+            gap: 0;
+        }
+
+        .tier-box {
+            flex: 1;
+            padding: 20px 24px;
+            border-radius: 10px;
+            position: relative;
+        }
+
+        .tier-box .tier-name {
+            font-size: 1.05rem;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+
+        .tier-box .tier-cap {
+            font-size: 0.8rem;
+            margin-bottom: 8px;
+        }
+
+        .tier-box .tier-bw {
+            display: inline-block;
+            background: #0005;
+            border: 1px solid #fff2;
+            border-radius: 4px;
+            padding: 2px 10px;
+            font-size: 0.78rem;
+            font-family: "SF Mono", "Fira Code", monospace;
+        }
+
+        .tier-box .tier-desc {
+            margin-top: 10px;
+            font-size: 0.85rem;
+            line-height: 1.6;
+        }
+
+        .tier-box .tier-desc strong { color: #fff; }
+
+        /* GPU HBM */
+        .tier-gpu {
+            background: linear-gradient(135deg, #1a2a0a, #0d1a05);
+            border: 2px solid #76b900;
+        }
+        .tier-gpu .tier-name { color: #76b900; }
+        .tier-gpu .tier-cap { color: #a0cc60; }
+        .tier-gpu .tier-desc { color: #b5d96c; }
+
+        /* CPU DRAM + NVMe */
+        .tier-cpu {
+            background: linear-gradient(135deg, #0a1a1a, #051515);
+            border: 2px solid #33aa77;
+        }
+        .tier-cpu .tier-name { color: #33aa77; }
+        .tier-cpu .tier-cap { color: #66cc99; }
+        .tier-cpu .tier-desc { color: #88ccaa; }
+
+        /* External Storage */
+        .tier-ext {
+            background: linear-gradient(135deg, #1a0a2a, #100520);
+            border: 2px solid #9966cc;
+        }
+        .tier-ext .tier-name { color: #9966cc; }
+        .tier-ext .tier-cap { color: #bb99dd; }
+        .tier-ext .tier-desc { color: #aa88cc; }
+
+        /* 层间传输 */
+        .transfer-bar {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 24px;
+            padding: 10px 0;
+        }
+
+        .transfer-bar .t-dir {
+            font-size: 0.82rem;
+            color: #888;
+        }
+
+        .transfer-bar .t-arrow {
+            font-size: 1.4rem;
+            line-height: 1;
+        }
+
+        .transfer-bar .t-arrow.down { color: #76b900; }
+        .transfer-bar .t-arrow.up { color: #cc8844; }
+
+        .transfer-bar .t-proto {
+            font-size: 0.78rem;
+            color: #666;
+            font-family: "SF Mono", "Fira Code", monospace;
+            background: #1a1a1a;
+            padding: 2px 8px;
+            border-radius: 4px;
+        }
+
+        /* ---- 缓存复用模式 ---- */
+        .reuse-section {
+            background: #111;
+            border: 1px solid #222;
+            border-radius: 12px;
+            padding: 28px 32px;
+            margin-bottom: 28px;
+        }
+
+        .reuse-section h2 {
+            color: #76b900;
+            font-size: 1.2rem;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #222;
+        }
+
+        .reuse-flow {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0;
+        }
+
+        .rf-step {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            width: 100%;
+            max-width: 600px;
+        }
+
+        .rf-box {
+            padding: 10px 18px;
+            border-radius: 8px;
+            font-size: 0.88rem;
+            text-align: center;
+            font-weight: 600;
+            min-width: 160px;
+        }
+
+        .rf-box.gpu-check  { background: #1a2a0a; border: 1px solid #76b900; color: #76b900; }
+        .rf-box.cpu-check  { background: #0a1a1a; border: 1px solid #33aa77; color: #33aa77; }
+        .rf-box.ext-check  { background: #1a0a2a; border: 1px solid #9966cc; color: #9966cc; }
+        .rf-box.recompute  { background: #3a1010; border: 1px solid #cc3333; color: #ff5555; }
+
+        .rf-hit {
+            font-size: 0.8rem;
+            padding: 6px 14px;
+            border-radius: 6px;
+            white-space: nowrap;
+        }
+
+        .rf-hit.h1 { background: #1e2a0a; border: 1px solid #76b90044; color: #76b900; }
+        .rf-hit.h2 { background: #0a1a1a; border: 1px solid #33aa7744; color: #33aa77; }
+        .rf-hit.h3 { background: #1a0a2a; border: 1px solid #9966cc44; color: #9966cc; }
+
+        .rf-arrow {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 4px 0;
+        }
+
+        .rf-arrow .line {
+            width: 2px;
+            height: 14px;
+            background: #444;
+            position: relative;
+        }
+
+        .rf-arrow .line::after {
+            content: "";
+            position: absolute;
+            bottom: -4px;
+            left: 50%;
+            transform: translateX(-50%);
+            border-left: 4px solid transparent;
+            border-right: 4px solid transparent;
+            border-top: 5px solid #444;
+        }
+
+        .rf-arrow .miss-label {
+            font-size: 0.72rem;
+            color: #cc6633;
+            margin-top: 2px;
+        }
+
+        .benefit-badge {
+            display: inline-block;
+            background: #1e2a0a;
+            border: 2px solid #76b900;
+            border-radius: 8px;
+            padding: 10px 20px;
+            margin-top: 16px;
+            text-align: center;
+        }
+
+        .benefit-badge .big {
+            color: #76b900;
+            font-size: 1.1rem;
+            font-weight: 700;
+        }
+
+        .benefit-badge .sub {
+            color: #a0cc60;
+            font-size: 0.85rem;
+            margin-top: 2px;
+        }
+
+        /* ---- 核心收益 ---- */
+        .benefits {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-bottom: 28px;
+        }
+
+        .benefit-card {
+            background: #111;
+            border: 1px solid #76b90044;
+            border-radius: 10px;
+            padding: 22px 24px;
+            text-align: center;
+        }
+
+        .benefit-card h3 {
+            color: #76b900;
+            font-size: 1.05rem;
+            margin-bottom: 8px;
+        }
+
+        .benefit-card p {
+            color: #aaa;
+            font-size: 0.88rem;
+            line-height: 1.6;
+        }
+
+        /* ---- 总结 ---- */
+        .card {
+            background: #111;
+            border: 1px solid #222;
+            border-radius: 12px;
+            padding: 32px 36px;
+            margin-bottom: 24px;
+        }
+
+        .card h2 {
+            color: #76b900;
+            font-size: 1.3rem;
+            margin-bottom: 18px;
+            border-bottom: 1px solid #222;
+            padding-bottom: 10px;
+        }
+
+        .card h3 { color: #ccc; font-size: 1.02rem; margin: 20px 0 10px; }
+
+        .card ul { list-style: none; padding-left: 0; }
+
+        .card li {
+            position: relative;
+            padding-left: 20px;
+            margin-bottom: 10px;
+            line-height: 1.75;
+            color: #bbb;
+        }
+
+        .card li::before {
+            content: "▸";
+            position: absolute;
+            left: 0;
+            color: #76b900;
+        }
+
+        .card li strong { color: #e0e0e0; }
+
+        code {
+            background: #1e1e1e;
+            padding: 2px 7px;
+            border-radius: 3px;
+            font-size: 0.88em;
+            color: #76b900;
+            font-family: "SF Mono", "Fira Code", monospace;
+        }
+
+        /* 层级对比表 */
+        .cmp-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 16px 0 8px;
+            font-size: 0.86rem;
+        }
+
+        .cmp-table th {
+            background: #1a1a1a;
+            color: #76b900;
+            text-align: left;
+            padding: 10px 14px;
+            border-bottom: 2px solid #333;
+            font-weight: 600;
+        }
+
+        .cmp-table td {
+            padding: 10px 14px;
+            border-bottom: 1px solid #1e1e1e;
+            color: #bbb;
+        }
+
+        .cmp-table tr:hover td { background: #151515; }
+
+        .tldr {
+            background: linear-gradient(135deg, #76b900 0%, #5a8f00 100%);
+            border-radius: 10px;
+            padding: 22px 30px;
+            text-align: center;
+            color: #000;
+            font-size: 1.02rem;
+            font-weight: 600;
+            line-height: 1.7;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+
+    <h1>多层级 KV Cache 卸载</h1>
+    <p class="subtitle">面向缓存复用与无限上下文的内存层次结构</p>
+
+    <!-- ===== 三层存储 ===== -->
+    <div class="tiers">
+        <!-- 第 1 层：GPU HBM -->
+        <div class="tier-row">
+            <div class="tier-box tier-gpu" style="flex:1.2;">
+                <div class="tier-name">第 1 层：GPU HBM（80-160GB）</div>
+                <div class="tier-cap">最热工作集 — 当前正在生成的 active token</div>
+                <div class="tier-bw">~3.5 TB/s</div>
+                <div class="tier-desc">
+                    <strong>容量最小、速度最快。</strong>仅存放当前推理批次正在使用的 KV cache，是生成过程直接读取的数据。
+                </div>
+            </div>
+        </div>
+
+        <div class="transfer-bar">
+            <span class="t-dir">Offload ↓ / Retrieve ↑</span>
+            <span class="t-proto">NIXL async transfers</span>
+        </div>
+
+        <!-- 第 2 层：CPU DRAM + NVMe -->
+        <div class="tier-row">
+            <div class="tier-box tier-cpu" style="flex:1.2;">
+                <div class="tier-name">第 2 层：CPU DRAM（1-4TB）+ NVMe（10-100TB）</div>
+                <div class="tier-cap">温热状态 — 近期使用过的 KV cache，节点本地存储</div>
+                <div class="tier-bw">~200 GB/s DRAM ｜ ~25 GB/s NVMe</div>
+                <div class="tier-desc">
+                    <strong>容量大、速度中等。</strong>存放近期请求的 KV cache（如几分钟内的对话历史），不在 GPU 上活跃使用，但随时可以注入回 GPU。
+                </div>
+            </div>
+        </div>
+
+        <div class="transfer-bar">
+            <span class="t-dir">Persist ↓ / Inject ↑</span>
+            <span class="t-proto">UCX, RDMA</span>
+        </div>
+
+        <!-- 第 3 层：External Storage -->
+        <div class="tier-row">
+            <div class="tier-box tier-ext" style="flex:1.2;">
+                <div class="tier-name">第 3 层：外部存储（Multi-PB 级别）</div>
+                <div class="tier-cap">冷存储 — 全集群共享的 Global KV Store，可归档和复用</div>
+                <div class="tier-bw">~10 GB/s</div>
+                <div class="tier-desc">
+                    <strong>容量几乎无限、速度最慢。</strong>存放跨节点共享的、可归档的 KV cache。同一用户过去的对话 cache、相同 system prompt 的 cache 都可以复用。
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== 缓存复用模式 ===== -->
+    <div class="reuse-section">
+        <h2>缓存复用模式 (Cache Reuse Pattern)</h2>
+
+        <div class="reuse-flow">
+            <div class="rf-step">
+                <div class="rf-box gpu-check">① 检查 GPU</div>
+                <div class="rf-hit h1">HIT → 继续生成（零开销）</div>
+            </div>
+            <div class="rf-arrow">
+                <div class="line"></div>
+                <div class="miss-label">Miss ↓</div>
+            </div>
+            <div class="rf-step">
+                <div class="rf-box cpu-check">② 检查 CPU / NVMe</div>
+                <div class="rf-hit h2">HIT → 注入回 GPU 后继续</div>
+            </div>
+            <div class="rf-arrow">
+                <div class="line"></div>
+                <div class="miss-label">Miss ↓</div>
+            </div>
+            <div class="rf-step">
+                <div class="rf-box ext-check">③ 检查 Global Store</div>
+                <div class="rf-hit h3">HIT → 加载到 CPU 再注入 GPU</div>
+            </div>
+            <div class="rf-arrow">
+                <div class="line"></div>
+                <div class="miss-label">Miss ↓</div>
+            </div>
+            <div class="rf-step">
+                <div class="rf-box recompute">④ 全部 Miss → 重新计算 Prefill</div>
+                <div style="flex:1;"></div>
+            </div>
+        </div>
+
+        <div style="text-align:center; margin-top:20px;">
+            <div class="benefit-badge">
+                <div class="big">Cache Hit → TTFT 降低 30-60%</div>
+                <div class="sub">复用 >>> 重算</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== 核心收益 ===== -->
+    <div class="benefits">
+        <div class="benefit-card">
+            <h3>降低 TTFT（首 Token 延迟）</h3>
+            <p>避免对重复上下文做昂贵的 Prefill 重计算。相同 system prompt、多轮对话等场景直接复用 KV cache，用户感知延迟大幅降低。</p>
+        </div>
+        <div class="benefit-card">
+            <h3>改善 TCO（总拥有成本）</h3>
+            <p>通过缓存局部性和跨请求共享，最大化硬件利用率。GPU 算力集中在真正需要计算的新 token 上，而非反复计算相同的上下文。</p>
+        </div>
+    </div>
+
+    <!-- ===== 层级对比表 ===== -->
+    <div class="card">
+        <h2>三层存储对比</h2>
+        <table class="cmp-table">
+            <thead>
+                <tr>
+                    <th>层级</th>
+                    <th>介质</th>
+                    <th>容量</th>
+                    <th>带宽</th>
+                    <th>存放内容</th>
+                    <th>传输协议</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong style="color:#76b900;">第 1 层</strong></td>
+                    <td>GPU HBM</td>
+                    <td>80-160 GB</td>
+                    <td>~3.5 TB/s</td>
+                    <td>当前活跃 token 的 KV cache</td>
+                    <td>—（本地访问）</td>
+                </tr>
+                <tr>
+                    <td><strong style="color:#33aa77;">第 2 层</strong></td>
+                    <td>CPU DRAM + NVMe</td>
+                    <td>1-4 TB + 10-100 TB</td>
+                    <td>~200 / ~25 GB/s</td>
+                    <td>近期请求的温热 KV cache</td>
+                    <td>NIXL async transfers</td>
+                </tr>
+                <tr>
+                    <td><strong style="color:#9966cc;">第 3 层</strong></td>
+                    <td>外部存储</td>
+                    <td>Multi-PB</td>
+                    <td>~10 GB/s</td>
+                    <td>全集群共享的归档 KV cache</td>
+                    <td>UCX / RDMA</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- ===== 详细总结 ===== -->
+    <div class="card">
+        <h2>内容总结</h2>
+
+        <h3>一、核心问题：GPU 显存装不下所有 KV Cache</h3>
+        <ul>
+            <li><strong>长上下文时代</strong> — 128K、1M 甚至更长上下文窗口下，单个请求的 KV cache 可达数 GB，GPU HBM 容量成为瓶颈。</li>
+            <li><strong>重复计算浪费</strong> — 同一 system prompt（如 "你是一个代码助手..."）每个请求都要做一遍 Prefill，算力被浪费在重复工作上。</li>
+            <li><strong>解法</strong> — 像 CPU 的 L1/L2/L3 缓存一样，构建多层级的 KV cache 存储层次结构，热数据在 GPU，温数据在 CPU/NVMe，冷数据在集群共享存储。</li>
+        </ul>
+
+        <h3>二、三层存储设计</h3>
+        <ul>
+            <li><strong>第 1 层 GPU HBM</strong> — 最热工作集，仅放当前批次正在生成的 token 对应的 KV cache。容量小（80-160GB）但带宽极高（~3.5TB/s），是推理引擎直接读取的层。</li>
+            <li><strong>第 2 层 CPU DRAM + NVMe</strong> — 节点本地的温热存储。近期请求的 KV cache 卸载到这里（通过 NIXL 异步传输），命中时可以快速注入回 GPU。DRAM 约 200GB/s，NVMe 约 25GB/s，容量可达数十 TB。</li>
+            <li><strong>第 3 层外部存储</strong> — 全集群共享的 Global KV Store，PB 级容量，通过 UCX / RDMA 访问。存放可归档和跨节点复用的 KV cache（如公共 system prompt 的 cache、用户历史对话的 cache）。</li>
+        </ul>
+
+        <h3>三、缓存复用逻辑</h3>
+        <ul>
+            <li><strong>类似 CPU 缓存的多级查找</strong>：先查 GPU → miss 则查 CPU/NVMe → miss 则查 Global Store → 全 miss 才重算 Prefill。</li>
+            <li><strong>TTFT 降低 30-60%</strong> — 只要在任意一层命中，就可以跳过对应部分的 Prefill 计算，直接用缓存的 KV。</li>
+            <li><strong>"复用远优于重算"</strong> — 从 CPU DRAM 注入 KV cache 到 GPU 的速度（~200GB/s）远快于在 GPU 上重新做 Prefill 的时间（需要完整的前向传播）。</li>
+        </ul>
+
+        <h3>四、关键技术组件</h3>
+        <ul>
+            <li><strong>NIXL（NVIDIA Inference Xfer Library）</strong> — 负责 GPU ↔ CPU/NVMe 之间的异步数据传输，在推理生成过程中后台卸载/加载 KV cache，不阻塞推理流水线。</li>
+            <li><strong>UCX / RDMA</strong> — 用于节点间的远程内存访问，支撑 Global KV Store 的跨节点数据传输。</li>
+            <li><strong>Cache 索引与匹配</strong> — 需要高效的哈希/前缀匹配机制来判断"这个请求的上下文是否有对应的已缓存 KV"。</li>
+        </ul>
+
+        <h3>五、典型应用场景</h3>
+        <ul>
+            <li><strong>多轮对话</strong> — 用户第 2 轮对话时，第 1 轮的 KV cache 还在 CPU/NVMe 上，直接注入 GPU 继续，无需重做 Prefill。</li>
+            <li><strong>共享 system prompt</strong> — 千百个请求用同一个 system prompt，其 KV cache 存在 Global Store 中被所有节点复用。</li>
+            <li><strong>长上下文推理</strong> — 128K+ 上下文不可能全放在 GPU HBM 里，分层存储让"无限上下文"成为可能。</li>
+        </ul>
+    </div>
+
+    <div class="tldr">
+        三层存储（GPU HBM → CPU/NVMe → 集群共享存储）构建 KV Cache 的"缓存金字塔"，<br>
+        逐级查找、命中即复用 — TTFT 降低 30-60%，GPU 算力只花在真正需要计算的新 token 上。
+    </div>
+
+</div>
+</body>
+</html>

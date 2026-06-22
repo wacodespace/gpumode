@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>同一源码，不同执行系统</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: #fafafa;
+  color: #1a1a1a;
+  padding: 3rem 2rem;
+  max-width: 1300px;
+  margin: 0 auto;
+}
+.label {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 0.25rem 0.6rem;
+  border: 1px solid #ccc;
+  margin-bottom: 1rem;
+  color: #8b6914;
+}
+h1 {
+  font-size: 2.2rem;
+  font-weight: 800;
+  margin-bottom: 2rem;
+}
+.compile-flow {
+  text-align: center;
+  margin-bottom: 2.5rem;
+}
+.compile-box {
+  display: inline-block;
+  border: 1px solid #ddd;
+  padding: 1rem 2.5rem;
+  background: #fff;
+}
+.compile-box .top {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #666;
+}
+.compile-box .arrow {
+  font-size: 1.2rem;
+  color: #999;
+  margin: 0.3rem 0;
+}
+.compile-box .bottom {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #666;
+}
+.arch-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 1.5rem;
+  margin-bottom: 2.5rem;
+}
+.arch-card {
+  border: 1px solid #e0e0e0;
+  background: #fff;
+  padding: 1.5rem;
+}
+.arch-card h2 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin-bottom: 0.25rem;
+}
+.arch-card .sm {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #8b6914;
+  margin-bottom: 1.2rem;
+}
+.arch-card table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.arch-card table tr {
+  border-top: 1px solid #eee;
+}
+.arch-card table td {
+  padding: 0.7rem 0;
+  vertical-align: top;
+}
+.arch-card table td:first-child {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #888;
+  width: 90px;
+  padding-top: 0.8rem;
+}
+.arch-card table td:last-child {
+  font-size: 0.9rem;
+  font-weight: 500;
+  font-family: "SF Mono", "Fira Code", monospace;
+}
+.arch-card--blackwell {
+  border-top: 3px solid #8b6914;
+}
+.arch-card--hopper {
+  border-top: 3px solid #666;
+}
+.arch-card--ampere {
+  border-top: 3px solid #aaa;
+}
+.mental-models {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+.model-box {
+  border: 1px solid #e0e0e0;
+  padding: 1.2rem 1.5rem;
+  background: #fff;
+}
+.model-box .model-label {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #888;
+  margin-bottom: 0.6rem;
+}
+.model-box .model-flow {
+  font-size: 1rem;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.model-box .model-flow .step {
+  background: #f5f5f0;
+  padding: 0.3rem 0.7rem;
+  border-radius: 3px;
+  border: 1px solid #e0e0e0;
+}
+.model-box .model-flow .arr {
+  color: #999;
+}
+.model-box--modern .model-flow .step {
+  background: #333;
+  color: #fff;
+  border-color: #333;
+}
+.model-box--modern .model-flow .arr {
+  color: #666;
+}
+.takeaway {
+  border-left: 4px solid #8b6914;
+  background: #f9f9f6;
+  padding: 1.2rem 1.5rem;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  color: #333;
+}
+.complexity-note {
+  margin-top: 2rem;
+  padding: 1rem 1.5rem;
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  font-size: 0.85rem;
+  color: #555;
+  line-height: 1.6;
+}
+.complexity-note strong { color: #1a1a1a; }
+@media (max-width: 900px) {
+  .arch-grid { grid-template-columns: 1fr; }
+  .mental-models { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<div class="label">架构漂移</div>
+<h1>同一源码，不同执行系统</h1>
+
+<div class="compile-flow">
+  <div class="compile-box">
+    <div class="top">源码 Kernel</div>
+    <div class="arrow">↓</div>
+    <div class="bottom">编译</div>
+  </div>
+</div>
+
+<div class="arch-grid">
+  <div class="arch-card arch-card--ampere">
+    <h2>Ampere</h2>
+    <div class="sm">SM80</div>
+    <table>
+      <tr>
+        <td>张量运算</td>
+        <td>HMMA</td>
+      </tr>
+      <tr>
+        <td>数据搬运</td>
+        <td>cp.async</td>
+      </tr>
+      <tr>
+        <td>寄存器</td>
+        <td>无溢出</td>
+      </tr>
+      <tr>
+        <td>同步</td>
+        <td>简单同步</td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="arch-card arch-card--hopper">
+    <h2>Hopper</h2>
+    <div class="sm">SM90A</div>
+    <table>
+      <tr>
+        <td>张量运算</td>
+        <td>HGMMA</td>
+      </tr>
+      <tr>
+        <td>数据搬运</td>
+        <td>TMA</td>
+      </tr>
+      <tr>
+        <td>寄存器</td>
+        <td>存在溢出</td>
+      </tr>
+      <tr>
+        <td>同步</td>
+        <td>mbarrier</td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="arch-card arch-card--blackwell">
+    <h2>Blackwell</h2>
+    <div class="sm">SM100A</div>
+    <table>
+      <tr>
+        <td>张量运算</td>
+        <td>tcgen05.mma /<br>tcgen05.mma.sp</td>
+      </tr>
+      <tr>
+        <td>数据搬运</td>
+        <td>tcgen05.cp /<br>tcgen05.st /<br>tcgen05.shift</td>
+      </tr>
+      <tr>
+        <td>寄存器</td>
+        <td>tcgen05.ld</td>
+      </tr>
+      <tr>
+        <td>同步</td>
+        <td>tcgen05.commit /<br>tcgen05.wait /<br>tcgen05.fence</td>
+      </tr>
+    </table>
+  </div>
+</div>
+
+<div class="mental-models">
+  <div class="model-box">
+    <div class="model-label">传统心智模型</div>
+    <div class="model-flow">
+      <span class="step">源码</span>
+      <span class="arr">→</span>
+      <span class="step">执行</span>
+    </div>
+  </div>
+  <div class="model-box model-box--modern">
+    <div class="model-label">现代现实</div>
+    <div class="model-flow">
+      <span class="step">源码</span>
+      <span class="arr">→</span>
+      <span class="step">编译器</span>
+      <span class="arr">→</span>
+      <span class="step">架构</span>
+      <span class="arr">→</span>
+      <span class="step">执行</span>
+    </div>
+  </div>
+</div>
+
+<div class="takeaway">
+  <strong>完全相同的源码在不同架构上会编译为本质不同的执行结构。</strong>
+  性能特征、寄存器压力、同步开销和故障模式全部依赖架构 — 在源码层面均不可见。
+</div>
+
+<div class="complexity-note">
+  <strong>复杂度逐代升级：</strong>Ampere 使用 4 个简单、易理解的原语。Blackwell 引入了全新的指令命名空间（<code>tcgen05.*</code>），具备细粒度的 commit/wait/fence 同步机制 — kernel 作者需要推理的面不断扩大，即使源码完全没变。
+</div>
+
+</body>
+</html>

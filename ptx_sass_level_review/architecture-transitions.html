@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>新硬件让跨代 Lowering 决策变得复杂</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: #fafafa;
+  color: #1a1a1a;
+  padding: 3rem 2rem;
+  max-width: 1300px;
+  margin: 0 auto;
+}
+.label {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid #ccc;
+  margin-bottom: 0.8rem;
+}
+.label--red { color: #a04040; border-color: #c88; }
+.label--gold { color: #8b6914; border-color: #d4a843; }
+.label--blue { color: #4a6fa5; border-color: #4a6fa5; }
+h1 {
+  font-size: 2rem;
+  font-weight: 800;
+  margin-bottom: 0.5rem;
+}
+.subtitle {
+  font-size: 0.92rem;
+  color: #666;
+  margin-bottom: 2.5rem;
+}
+
+/* three cards */
+.cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+.card {
+  border: 1px solid #e0e0e0;
+  background: #fff;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+}
+.card h2 {
+  font-size: 1.15rem;
+  font-weight: 700;
+  margin-bottom: 0.8rem;
+}
+.card p {
+  font-size: 0.83rem;
+  color: #555;
+  line-height: 1.65;
+  margin-bottom: 1.2rem;
+  flex-grow: 1;
+}
+.code-block {
+  background: #f5f5f0;
+  border: 1px solid #e8e8e3;
+  padding: 0.8rem 1rem;
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 0.75rem;
+  line-height: 1.8;
+}
+.code-block .comment { color: #888; }
+.code-block .kw { color: #2980b9; }
+.code-block .inst { color: #c0392b; }
+.code-block .signal { color: #c0392b; font-weight: 700; }
+
+/* bottom bar */
+.bottom-bar {
+  border: 1px solid #e0e0e0;
+  border-top: 2px solid #aaa;
+  background: #fff;
+  padding: 1rem 1.5rem;
+  font-size: 0.88rem;
+  color: #333;
+  text-align: center;
+  line-height: 1.6;
+  margin-bottom: 2.5rem;
+}
+
+/* summary */
+.summary {
+  border: 1px solid #e0e0e0;
+  border-top: 3px solid #4a6fa5;
+  background: #fff;
+  padding: 2rem;
+}
+.summary h2 {
+  font-size: 1.3rem;
+  font-weight: 700;
+  margin-bottom: 1.2rem;
+  color: #2c3e50;
+}
+.summary-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+.insight {
+  border: 1px solid #e8e8e3;
+  padding: 1.2rem 1.5rem;
+  background: #f9f9f6;
+}
+.insight h3 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+.insight p {
+  font-size: 0.82rem;
+  color: #555;
+  line-height: 1.7;
+  margin-bottom: 0.5rem;
+}
+.insight p:last-child { margin-bottom: 0; }
+.takeaway {
+  border: 1px solid #e0e0e0;
+  border-left: 4px solid #4a6fa5;
+  background: #f5f8fb;
+  padding: 1.2rem 1.5rem;
+}
+.takeaway h3 {
+  font-size: 1rem;
+  font-weight: 700;
+  margin-bottom: 0.6rem;
+}
+.takeaway p {
+  font-size: 0.85rem;
+  color: #555;
+  line-height: 1.7;
+  margin-bottom: 0.6rem;
+}
+.takeaway p:last-child { margin-bottom: 0; }
+
+/* deep dive: instruction evolution */
+.evolution {
+  border: 1px solid #e0e0e0;
+  border-top: 3px solid #a04040;
+  background: #fff;
+  padding: 2rem;
+  margin-bottom: 1.5rem;
+}
+.evolution h3 {
+  font-size: 1.15rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+.evolution > .desc {
+  font-size: 0.83rem;
+  color: #666;
+  line-height: 1.6;
+  margin-bottom: 1.5rem;
+}
+.evo-row {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr auto 1fr;
+  gap: 0;
+  align-items: stretch;
+  margin-bottom: 1.2rem;
+}
+.evo-box {
+  border: 1px solid #e0e0e0;
+  padding: 0.8rem 1rem;
+  background: #fafafa;
+}
+.evo-box .evo-label {
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #888;
+  margin-bottom: 0.4rem;
+}
+.evo-box .evo-inst {
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 0.85rem;
+  font-weight: 700;
+  margin-bottom: 0.3rem;
+}
+.evo-box .evo-desc {
+  font-size: 0.75rem;
+  color: #666;
+  line-height: 1.5;
+}
+.evo-box--old { border-top: 2px solid #aaa; }
+.evo-box--new { border-top: 2px solid #8b6914; }
+.evo-box--risk { border-top: 2px solid #c0392b; background: #fdf8f8; }
+.evo-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.5rem;
+  color: #bbb;
+  font-size: 1.1rem;
+}
+.evo-note {
+  border: 1px solid #e8e8e3;
+  border-left: 3px solid #a04040;
+  background: #f9f9f6;
+  padding: 1rem 1.2rem;
+  font-size: 0.82rem;
+  color: #555;
+  line-height: 1.7;
+}
+.evo-note strong { color: #1a1a1a; }
+.evo-outcomes {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 0.8rem;
+  margin-top: 1rem;
+}
+.evo-outcome {
+  border: 1px solid #e0e0e0;
+  padding: 0.7rem 0.8rem;
+  text-align: center;
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+.evo-outcome .outcome-icon { font-size: 1rem; margin-bottom: 0.2rem; }
+.evo-outcome .outcome-title { font-weight: 700; margin-bottom: 0.2rem; }
+.evo-outcome .outcome-desc { color: #888; }
+.evo-outcome--good { background: #e8f5e9; }
+.evo-outcome--partial { background: #fff8e1; }
+.evo-outcome--bad { background: #fce4ec; }
+
+.drift-chain {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0;
+  margin: 1rem 0;
+}
+.drift-step {
+  padding: 0.5rem;
+  text-align: center;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  border: 1px solid #e0e0e0;
+}
+.drift-step .step-name {
+  font-weight: 700;
+  margin-bottom: 0.2rem;
+}
+.drift-step .step-desc { color: #888; }
+.drift-step--same { background: #e8f5e9; }
+.drift-step--diff { background: #fce4ec; }
+
+@media (max-width: 900px) {
+  .cards { grid-template-columns: 1fr; }
+  .summary-grid { grid-template-columns: 1fr; }
+  .drift-chain { grid-template-columns: 1fr; }
+  .evo-row { grid-template-columns: 1fr; gap: 0.5rem; }
+  .evo-arrow { transform: rotate(90deg); padding: 0.3rem 0; }
+  .evo-outcomes { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<div class="label">架构过渡</div>
+<h1>新硬件让跨代 Lowering 决策变得复杂</h1>
+<p class="subtitle">审计 target-native 路径至关重要。</p>
+
+<div class="cards">
+  <div class="card">
+    <div class="label label--gold">Ampere → Hopper</div>
+    <h2>算术变成了编排</h2>
+    <p>Hopper 把性能从"算得快"变成了"协调得好"：warpgroup 矩阵运算、TMA 式批量搬运、wait/arrive 同步机制，以及分阶段的 producer/consumer 角色分工。</p>
+    <div class="code-block">
+      <span class="comment">// 需要回答的问题</span><br>
+      <span class="kw">mma.sync</span> ? → <span class="inst">WGMMA</span> / <span class="inst">HGMMA</span> ?<br>
+      <span class="kw">cp.async</span> ? → <span class="inst">TMA</span> / <span class="inst">UTMALDG</span> ?
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="label label--red">Hopper → Blackwell</div>
+    <h2>编译器-目标漂移</h2>
+    <p>更新的目标架构会引入额外的后端选择、调度细节和指令选择风险。不要过度解读单条 opcode；应当将生成的整体拓扑结构与你期望的目标架构进行对比。</p>
+    <div class="code-block">
+      <span class="comment">// 需要对比的信号</span><br>
+      <span class="signal">LOCAL_MEMORY_SPILL_*</span><br>
+      <span class="kw">HMMA</span> / <span class="kw">WGMMA</span> / <span class="kw">MMA</span><br>
+      <span class="kw">WARPSYNC</span> / barriers
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="label">Blackwell 内部</div>
+    <h2>子目标差异</h2>
+    <p>即使是相近的目标架构（sub-target），也可能选择不同的指令形状、调用路径或调度结构。对 Blackwell 特定的性能声明保持保守态度，直到编译产物和实测数据一致。</p>
+    <div class="code-block">
+      <span class="comment">// 语料级审查要问的问题</span><br>
+      same kernel<br>
+      same library<br>
+      <span class="signal">different emitted path</span>
+    </div>
+  </div>
+</div>
+
+<div class="bottom-bar">
+  <strong>架构漂移就是执行结构漂移</strong>：同样的源码、同样的 PTX、同样的逻辑 kernel，都可能因为目标架构不同而产生完全不同的执行路径。
+</div>
+
+<!-- ============ Summary ============ -->
+<div class="summary">
+  <div class="label label--blue">总结与理解</div>
+  <h2>这张 slide 的核心信息</h2>
+
+  <div class="summary-grid">
+    <div class="insight">
+      <h3>三张卡片是三个不同粒度的"漂移"</h3>
+      <p>第一张讲的是<strong>代际跨越</strong>（Ampere → Hopper）：整个编程模型都变了，从"每个 warp 独立算"变成"warpgroup 协调执行"。这不是换个 opcode 的问题，是执行哲学的改变。</p>
+      <p>第二张讲的是<strong>编译器后端的漂移</strong>（Hopper → Blackwell）：同一份 PTX 给不同后端编译，产出的 SASS 结构可能完全不同。编译器的指令选择、调度策略都会随 target 改变。</p>
+      <p>第三张讲的是<strong>同代内的 sub-target 差异</strong>：即使都是 Blackwell，SM100 和 SM100a 可能走不同的指令路径。这个粒度是最容易被忽略的。</p>
+    </div>
+
+    <div class="insight">
+      <h3>"不要过度解读单条 opcode" 是一个关键警告</h3>
+      <p>Slide 第二张卡片特意强调了这一点。这里说的是<strong>跨代命名漂移</strong>：同一代架构内，<code>HMMA</code>（warp 级）和 <code>HGMMA</code>（warpgroup 级）是不同的硬件操作，看到 HMMA 就是没用 warpgroup。但跨代时，相同执行粒度的操作可能换了完全不同的名字——比如 Blackwell 上的 <code>tcgen05.mma</code> 对应的可能就是 warpgroup 级别的执行，只是不再叫 WGMMA。因此不能仅凭"没看到某个指令名"就下结论，要看<strong>整体拓扑</strong>：数据搬运路径、同步结构、寄存器分布是否符合目标架构的原生执行模式。</p>
+    </div>
+
+    <div class="insight">
+      <h3>PTX 的"可移植性"在这里暴露了它的局限</h3>
+      <p>PTX 的设计初衷是"写一次，跨架构运行"——一份 PTX 编译到 Ampere、Hopper、Blackwell 都能跑。但这张 slide 指出的恰恰是：能跑不等于跑得一样。<code>ptxas</code> 为不同 target 选择的指令序列、调度方式、同步策略可以完全不同。PTX 提供了可移植性（portability），但没有提供<strong>执行一致性</strong>（execution determinism）。</p>
+    </div>
+
+    <div class="insight">
+      <h3>第三张卡片暗示了一个实际的工作流问题</h3>
+      <p>"same kernel, same library, different emitted path" 说的是：你可能从某个 benchmark 博客上看到"Blackwell 上这个 kernel 的 SASS 用了 XXX 指令"，但你自己编译出来的 SASS 完全不一样。原因可能是你们用了不同的 sub-target（<code>sm_100</code> vs <code>sm_100a</code>）、不同版本的 CUDA toolkit，甚至不同的 <code>ptxas</code> 优化等级。在 Blackwell 这种还在演进中的架构上，别人的编译产物<strong>不能直接作为你的参考</strong>——必须看自己的。</p>
+    </div>
+  </div>
+
+  <div class="evolution">
+    <div class="label label--red">深入理解</div>
+    <h3>旧指令到底怎么"变成"新指令的？——不是替换，是重构</h3>
+    <p class="desc">
+      直觉上会觉得"<code>mma.sync</code> 升级成了 WGMMA"、"<code>cp.async</code> 升级成了 TMA"。但实际上这不是一对一替换——中间隔着编译器的一系列结构性决策。
+    </p>
+
+    <!-- mma.sync → WGMMA -->
+    <div class="evo-row">
+      <div class="evo-box evo-box--old">
+        <div class="evo-label">Ampere</div>
+        <div class="evo-inst">mma.sync</div>
+        <div class="evo-desc">单个 warp（32 线程）独立执行<br>同步操作，发射即完成</div>
+      </div>
+      <div class="evo-arrow">→</div>
+      <div class="evo-box evo-box--risk">
+        <div class="evo-label">编译器决策</div>
+        <div class="evo-inst">lowering</div>
+        <div class="evo-desc">warp 怎么分组？<br>同步点插在哪？<br>寄存器如何跨 4 warp 分配？</div>
+      </div>
+      <div class="evo-arrow">→</div>
+      <div class="evo-box evo-box--new">
+        <div class="evo-label">Hopper</div>
+        <div class="evo-inst">WGMMA (异步)</div>
+        <div class="evo-desc">4 个 warp 组成 warpgroup 协调执行<br>需要 arrive/wait 配合</div>
+      </div>
+    </div>
+
+    <!-- cp.async → TMA -->
+    <div class="evo-row">
+      <div class="evo-box evo-box--old">
+        <div class="evo-label">Ampere</div>
+        <div class="evo-inst">cp.async</div>
+        <div class="evo-desc">每个线程各自发起异步拷贝<br>占用 warp 执行资源</div>
+      </div>
+      <div class="evo-arrow">→</div>
+      <div class="evo-box evo-box--risk">
+        <div class="evo-label">编译器决策</div>
+        <div class="evo-inst">lowering</div>
+        <div class="evo-desc">用不用 TMA 硬件单元？<br>描述符怎么配置？<br>搬运/计算流水线怎么划分？</div>
+      </div>
+      <div class="evo-arrow">→</div>
+      <div class="evo-box evo-box--new">
+        <div class="evo-label">Hopper</div>
+        <div class="evo-inst">TMA (硬件搬运单元)</div>
+        <div class="evo-desc">独立硬件执行 GMEM ↔ SMEM<br>不占 warp 执行资源</div>
+      </div>
+    </div>
+
+    <div class="evo-note">
+      <strong>关键问题：编译器中间那一步不是确定性的。</strong>同一份 PTX 里的 <code>mma.sync</code>，编译器给 Hopper target 编译时可能产生三种结果：
+      <div class="evo-outcomes">
+        <div class="evo-outcome evo-outcome--good">
+          <div class="outcome-title">完全升级</div>
+          <div class="outcome-desc">WGMMA + TMA + mbarrier 流水线全部落地</div>
+        </div>
+        <div class="evo-outcome evo-outcome--partial">
+          <div class="outcome-title">部分升级</div>
+          <div class="outcome-desc">用了 WGMMA 但搬运还是走 cp.async 老路径</div>
+        </div>
+        <div class="evo-outcome evo-outcome--bad">
+          <div class="outcome-title">完全回退</div>
+          <div class="outcome-desc">某些约束没满足，回退到 per-warp HMMA</div>
+        </div>
+      </div>
+    </div>
+    <p class="desc" style="margin-top: 1rem; margin-bottom: 0;">
+      你心里预期的是"Hopper 原生路径"，但编译器实际给你的可能是混合体甚至完全回退。<strong>不看编译产物，就不知道 lowering 漂到了哪里</strong>——这就是"compiler-target drift"的含义。
+    </p>
+  </div>
+
+  <div class="takeaway">
+    <h3>架构漂移的五个层次</h3>
+    <p>同一份源码，经过下面五个阶段，每一步都可能因为 target 不同而发生分歧：</p>
+    <div class="drift-chain">
+      <div class="drift-step drift-step--same"><div class="step-name">源码</div><div class="step-desc">完全相同</div></div>
+      <div class="drift-step drift-step--same"><div class="step-name">PTX</div><div class="step-desc">可能相同</div></div>
+      <div class="drift-step drift-step--diff"><div class="step-name">指令选择</div><div class="step-desc">可能不同</div></div>
+      <div class="drift-step drift-step--diff"><div class="step-name">调度/寄存器</div><div class="step-desc">很可能不同</div></div>
+      <div class="drift-step drift-step--diff"><div class="step-name">运行时行为</div><div class="step-desc">几乎一定不同</div></div>
+    </div>
+    <p>这就是为什么 slide 的结论是"审计 target-native 路径至关重要"——你不能假设源码相同就意味着执行路径相同。每换一个目标架构（甚至 sub-target），都值得重新检查编译产物。</p>
+  </div>
+</div>
+
+</body>
+</html>

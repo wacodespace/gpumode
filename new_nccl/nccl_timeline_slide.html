@@ -1,0 +1,449 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NCCL 2.28 to 2.30 Feature Advances</title>
+  <style>
+    :root {
+      --ink: #18212d;
+      --muted: #69707a;
+      --line: #d9dde0;
+      --teal: #17aaa5;
+      --gold: #d69212;
+      --purple: #6b5dd4;
+      --green: #63b600;
+      --paper: #f6f8f3;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: #e9ece6;
+      color: var(--ink);
+      font-family: Inter, "Segoe UI", Arial, sans-serif;
+      letter-spacing: 0;
+    }
+
+    .slide {
+      width: min(100vw, 1500px);
+      min-height: 820px;
+      margin: 0 auto;
+      padding: 30px 28px 28px;
+      background:
+        radial-gradient(circle at 20% 10%, rgba(255, 255, 255, 0.78), transparent 32%),
+        linear-gradient(180deg, #fbfcf8 0%, var(--paper) 100%);
+      box-shadow: 0 8px 28px rgba(22, 30, 38, 0.1);
+      position: relative;
+    }
+
+    .eyebrow {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      color: #5e6670;
+      font-size: 16px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    .eyebrow::before {
+      content: "";
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--green);
+      flex: 0 0 auto;
+    }
+
+    h1 {
+      margin: 34px 0 96px;
+      font-size: clamp(34px, 4vw, 54px);
+      line-height: 1.05;
+      font-weight: 900;
+    }
+
+    .timeline {
+      position: relative;
+      height: 400px;
+      margin: 0 70px;
+    }
+
+    .rail {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 170px;
+      height: 5px;
+      background: var(--line);
+    }
+
+    .segment {
+      position: absolute;
+      top: 170px;
+      height: 5px;
+    }
+
+    .segment.teal {
+      left: 2%;
+      width: 43%;
+      background: var(--teal);
+    }
+
+    .segment.gold {
+      left: 25%;
+      width: 47%;
+      background: var(--gold);
+    }
+
+    .segment.purple {
+      left: 72%;
+      width: 23%;
+      background: var(--purple);
+    }
+
+    .milestone {
+      position: absolute;
+      width: 245px;
+      transform: translateX(-50%);
+      text-align: center;
+    }
+
+    .milestone.top {
+      top: -7px;
+    }
+
+    .milestone.bottom {
+      top: 238px;
+    }
+
+    .stem {
+      position: absolute;
+      left: 50%;
+      width: 2px;
+      height: 55px;
+      transform: translateX(-50%);
+      background: currentColor;
+    }
+
+    .top .stem {
+      top: 112px;
+    }
+
+    .bottom .stem {
+      top: -64px;
+    }
+
+    .dot {
+      position: absolute;
+      left: 50%;
+      top: 152px;
+      width: 30px;
+      height: 30px;
+      transform: translateX(-50%);
+      border-radius: 50%;
+      background: currentColor;
+      border: 2px solid rgba(255, 255, 255, 0.65);
+      z-index: 2;
+    }
+
+    .version {
+      margin: 0 0 10px;
+      font-size: 30px;
+      line-height: 1;
+      font-weight: 900;
+      color: currentColor;
+    }
+
+    .title {
+      margin: 0 0 14px;
+      font-size: 20px;
+      line-height: 1.15;
+      font-weight: 900;
+      color: var(--ink);
+    }
+
+    .body {
+      margin: 0;
+      color: var(--muted);
+      font-size: 16px;
+      line-height: 1.25;
+      font-weight: 500;
+    }
+
+    .m1 { left: 2%; color: var(--teal); }
+    .m2 { left: 25%; color: var(--teal); }
+    .m3 { left: 48%; color: var(--gold); }
+    .m4 { left: 71%; color: var(--gold); }
+    .m5 { left: 94%; color: var(--purple); }
+
+    .notes {
+      display: grid;
+      grid-template-columns: 1fr 0.92fr;
+      gap: 80px;
+      border-top: 2px solid #e1e4df;
+      padding: 18px 0 0;
+      margin: 0 0 0;
+      color: var(--muted);
+      font-size: 20px;
+      line-height: 1.32;
+    }
+
+    .notes h2 {
+      margin: 0 0 8px;
+      font-size: 20px;
+      color: #56606c;
+      font-weight: 900;
+    }
+
+    .notes ol {
+      margin: 0;
+      padding-left: 24px;
+    }
+
+    .notes li {
+      margin: 8px 0;
+    }
+
+    .summary {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 22px;
+      align-items: start;
+      margin-top: 22px;
+      padding-top: 14px;
+      border-top: 1px solid #e2e5e0;
+      color: #525b66;
+      font-size: 15px;
+      line-height: 1.45;
+    }
+
+    .summary h2 {
+      margin: 0 0 6px;
+      color: var(--ink);
+      font-size: 18px;
+    }
+
+    .summary p {
+      margin: 0;
+    }
+
+    .word-count {
+      min-width: 190px;
+      padding: 12px 14px;
+      border: 1px solid #d6dad5;
+      background: rgba(255, 255, 255, 0.55);
+      border-radius: 8px;
+      text-align: center;
+    }
+
+    .word-count strong {
+      display: block;
+      color: var(--ink);
+      font-size: 30px;
+      line-height: 1;
+    }
+
+    .source {
+      position: absolute;
+      left: 86px;
+      bottom: 28px;
+      color: #7a8189;
+      font-size: 13px;
+    }
+
+    .footer {
+      position: absolute;
+      right: 86px;
+      bottom: 28px;
+      color: #7a8189;
+      font-size: 13px;
+    }
+
+    #transcript {
+      display: none;
+    }
+
+    @media (max-width: 900px) {
+      .slide {
+        min-height: auto;
+        padding: 22px 18px 70px;
+      }
+
+      h1 {
+        margin-bottom: 36px;
+      }
+
+      .timeline {
+        height: auto;
+        margin: 0;
+        display: grid;
+        gap: 18px;
+      }
+
+      .rail,
+      .segment,
+      .stem,
+      .dot {
+        display: none;
+      }
+
+      .milestone {
+        position: static;
+        transform: none;
+        width: auto;
+        text-align: left;
+        padding-left: 14px;
+        border-left: 4px solid currentColor;
+      }
+
+      .milestone.top,
+      .milestone.bottom {
+        top: auto;
+      }
+
+      .notes,
+      .summary {
+        grid-template-columns: 1fr;
+        gap: 20px;
+        margin-top: 28px;
+      }
+
+      .source,
+      .footer {
+        left: 18px;
+        right: auto;
+        bottom: 40px;
+      }
+
+      .footer {
+        bottom: 18px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="slide" aria-labelledby="slide-title">
+    <div class="eyebrow">NCCL Feature Release Timeline</div>
+    <h1 id="slide-title">NCCL 2.28 to 2.30 feature advances</h1>
+
+    <section class="timeline" aria-label="NCCL release timeline">
+      <div class="rail"></div>
+      <div class="segment teal"></div>
+      <div class="segment gold"></div>
+      <div class="segment purple"></div>
+
+      <article class="milestone top m1">
+        <div class="stem"></div>
+        <div class="dot"></div>
+        <p class="version">2.28.3</p>
+        <p class="title">Device API lands</p>
+        <p class="body">Device-side NCCL, symmetric kernels, new host collectives, and CE collectives.</p>
+      </article>
+
+      <article class="milestone bottom m2">
+        <div class="stem"></div>
+        <div class="dot"></div>
+        <p class="version">2.28.7</p>
+        <p class="title">GIN starts</p>
+        <p class="body">GPU-Initiated Networking, ncclCommRevoke, RAS JSON, faster bootstrap.</p>
+      </article>
+
+      <article class="milestone top m3">
+        <div class="stem"></div>
+        <div class="dot"></div>
+        <p class="version">2.29.2</p>
+        <p class="title">Elastic jobs</p>
+        <p class="body">ncclCommGrow, NCCL4Py, LLVM IR, one-sided host APIs, AllGatherV scaling.</p>
+      </article>
+
+      <article class="milestone bottom m4">
+        <div class="stem"></div>
+        <div class="dot"></div>
+        <p class="version">2.29.7</p>
+        <p class="title">Offload + failover</p>
+        <p class="body">Suspend/resume memory offload, port failover, GIN multi-context, CMake install.</p>
+      </article>
+
+      <article class="milestone top m5">
+        <div class="stem"></div>
+        <div class="dot"></div>
+        <p class="version">2.30.3</p>
+        <p class="title">Memory and recovery</p>
+        <p class="body">Elastic Buffers, TMA, DDP, port recovery, GIN get/timeouts, parameter APIs.</p>
+      </article>
+    </section>
+
+    <section class="notes" aria-label="Feature notes">
+      <div>
+        <h2>Device API:</h2>
+        <ol>
+          <li>Device API provide flexible, high performance HW(GPU/NVLink/RDMA) abstraction</li>
+          <li>NCCLEP/XFER/UBX/DeepEPv2/customized kernels built on device API</li>
+          <li>NCCL DSL with cuTe</li>
+        </ol>
+      </div>
+      <div>
+        <h2>Host API:</h2>
+        <ol>
+          <li>Collective in 3 flavors: default, low latency, zero-sm</li>
+          <li>CopyEngine, TMA, One side API</li>
+          <li>Fault tolerance &amp; resiliency &amp; RAS, profiler</li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="summary" aria-label="Slide summary and word count">
+      <div>
+        <h2>中文总结</h2>
+        <p>这页 slide 按版本线梳理了 NCCL 2.28.3 到 2.30.3 的能力演进：2.28 系列引入 Device API、设备侧 NCCL、对称 kernel、GIN、RAS 与更快 bootstrap；2.29 系列推进弹性任务、NCCL4Py、LLVM IR、一侧 Host API、AllGatherV 扩展、内存 offload 与端口 failover；2.30.3 进一步强化 Elastic Buffers、TMA、DDP、端口恢复、GIN 超时/查询和参数 API。底部将重点归为两类：Device API 面向高性能硬件抽象与自定义 kernel/DSL，Host API 面向 collective 变体、CopyEngine/TMA/One-side API 以及容错、RAS 和 profiler。</p>
+      </div>
+      <div class="word-count">
+        <span>Slide visible word count</span>
+        <strong id="word-count">0</strong>
+      </div>
+    </section>
+
+    <p class="source">Source: NVIDIA NCCL release notes: 2.28.3, 2.28.7, 2.29.2, 2.29.7, 2.30.3</p>
+    <p class="footer">Google Slides-ready PPTX</p>
+
+    <pre id="transcript">NCCL FEATURE RELEASE TIMELINE
+NCCL 2.28 to 2.30 feature advances
+2.28.3
+Device API lands
+Device-side NCCL, symmetric kernels, new host collectives, and CE collectives.
+2.28.7
+GIN starts
+GPU-Initiated Networking, ncclCommRevoke, RAS JSON, faster bootstrap.
+2.29.2
+Elastic jobs
+ncclCommGrow, NCCL4Py, LLVM IR, one-sided host APIs, AllGatherV scaling.
+2.29.7
+Offload + failover
+Suspend/resume memory offload, port failover, GIN multi-context, CMake install.
+2.30.3
+Memory and recovery
+Elastic Buffers, TMA, DDP, port recovery, GIN get/timeouts, parameter APIs.
+Device API:
+1. Device API provide flexible, high performance HW(GPU/NVLink/RDMA) abstraction
+2. NCCLEP/XFER/UBX/DeepEPv2/customized kernels built on device API
+3. NCCL DSL with cuTe
+Host API:
+1. Collective in 3 flavors: default, low latency, zero-sm
+2. CopyEngine, TMA, One side API
+3. Fault tolerance &amp; resiliency &amp; RAS, profiler
+Source: NVIDIA NCCL release notes: 2.28.3, 2.28.7, 2.29.2, 2.29.7, 2.30.3
+Google Slides-ready PPTX</pre>
+  </main>
+
+  <script>
+    const transcript = document.getElementById("transcript").textContent;
+    const words = transcript.match(/[A-Za-z0-9]+(?:[-/.][A-Za-z0-9]+)*/g) || [];
+    document.getElementById("word-count").textContent = words.length;
+  </script>
+</body>
+</html>

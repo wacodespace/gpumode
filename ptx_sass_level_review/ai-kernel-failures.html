@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI 生成的 Kernel 可能在语义和结构两个层面失败</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: #fafafa;
+  color: #1a1a1a;
+  padding: 3rem 2rem;
+  max-width: 1300px;
+  margin: 0 auto;
+}
+.label {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid #ccc;
+  margin-bottom: 0.8rem;
+}
+.label--red { color: #a04040; border-color: #c88; }
+.label--gold { color: #8b6914; border-color: #d4a843; }
+.label--blue { color: #4a6fa5; border-color: #4a6fa5; }
+h1 {
+  font-size: 2rem;
+  font-weight: 800;
+  margin-bottom: 2.5rem;
+}
+
+/* two-column cards */
+.cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.8rem;
+  margin-bottom: 2.5rem;
+}
+.card {
+  border: 1px solid #e0e0e0;
+  background: #fff;
+  padding: 1.8rem;
+}
+.card h2 {
+  font-size: 1.2rem;
+  font-weight: 700;
+  margin-bottom: 0.8rem;
+}
+.card > p {
+  font-size: 0.85rem;
+  color: #555;
+  line-height: 1.65;
+  margin-bottom: 1.2rem;
+}
+.code-block {
+  background: #f5f5f0;
+  border: 1px solid #e8e8e3;
+  padding: 0.8rem 1rem;
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 0.78rem;
+  line-height: 1.8;
+}
+.code-block .comment { color: #888; }
+.code-block .kw { color: #2980b9; }
+.code-block .inst { color: #c0392b; }
+.code-block .signal { color: #c0392b; font-weight: 700; }
+.code-block .bullet { color: #888; }
+
+/* summary */
+.summary {
+  border: 1px solid #e0e0e0;
+  border-top: 3px solid #4a6fa5;
+  background: #fff;
+  padding: 2rem;
+}
+.summary h2 {
+  font-size: 1.3rem;
+  font-weight: 700;
+  margin-bottom: 1.2rem;
+  color: #2c3e50;
+}
+.summary-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+.insight {
+  border: 1px solid #e8e8e3;
+  padding: 1.2rem 1.5rem;
+  background: #f9f9f6;
+}
+.insight h3 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+.insight p {
+  font-size: 0.82rem;
+  color: #555;
+  line-height: 1.7;
+  margin-bottom: 0.5rem;
+}
+.insight p:last-child { margin-bottom: 0; }
+.takeaway {
+  border: 1px solid #e0e0e0;
+  border-left: 4px solid #4a6fa5;
+  background: #f5f8fb;
+  padding: 1.2rem 1.5rem;
+}
+.takeaway h3 {
+  font-size: 1rem;
+  font-weight: 700;
+  margin-bottom: 0.6rem;
+}
+.takeaway p {
+  font-size: 0.85rem;
+  color: #555;
+  line-height: 1.7;
+  margin-bottom: 0.6rem;
+}
+.takeaway p:last-child { margin-bottom: 0; }
+.check-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+  margin: 1rem 0;
+}
+.check-table th {
+  text-align: left;
+  padding: 0.5rem 0.8rem;
+  border-bottom: 2px solid #ddd;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #888;
+}
+.check-table td {
+  padding: 0.5rem 0.8rem;
+  border-bottom: 1px solid #eee;
+  color: #555;
+  line-height: 1.5;
+}
+.check-table td:first-child {
+  font-weight: 600;
+  color: #1a1a1a;
+  white-space: nowrap;
+}
+.check-pass { color: #2e7d32 !important; }
+.check-fail { color: #c0392b !important; }
+
+@media (max-width: 900px) {
+  .cards { grid-template-columns: 1fr; }
+  .summary-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<h1>AI 生成的 Kernel 可能在语义和结构两个层面失败</h1>
+
+<div class="cards">
+  <div class="card">
+    <div class="label label--red">语义 / 评测失败</div>
+    <h2>结果错误、作弊、或只针对 benchmark</h2>
+    <p>Kernel 返回了错误的结果，利用了输入假设，缓存了输出，monkey-patch 了计时器，安装了额外依赖包，或者是在针对评测框架本身而非数学运算进行优化。</p>
+    <div class="code-block">
+      <span class="bullet">&#8226;</span> benchmark says <span class="kw">mean(randn(...))</span><br>
+      &nbsp;&nbsp;return 0<br>
+      <br>
+      <span class="bullet">&#8226;</span> fast because it <span class="signal">skipped the task</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="label label--gold">硬件 / 结构失败</div>
+    <h2>结果正确，但硬件路径不好</h2>
+    <p>Kernel 通过了测试，但生成的汇编结构有问题：使用了标量内存搬运、没有命中 tensor core、寄存器严重溢出、异步搬运做得差，或者回退到了非原生路径。</p>
+    <div class="code-block">
+      <span class="signal">st.local</span> / <span class="signal">ld.local</span><br>
+      <span class="signal">LDG.E</span> instead of <span class="kw">LDG.E.128</span><br>
+      missing expected native <span class="kw">MMA</span> path
+    </div>
+  </div>
+</div>
+
+<!-- ============ Summary ============ -->
+<div class="summary">
+  <div class="label label--blue">总结与理解</div>
+  <h2>两类失败、两套检测手段</h2>
+
+  <div class="summary-grid">
+    <div class="insight">
+      <h3>左边是"考试作弊"，右边是"及格但没学会"</h3>
+      <p>语义失败（左卡片）好理解：AI 生成的 kernel 算出来的答案就是错的，或者通过各种 shortcut 骗过了 benchmark 框架。这类问题用数值正确性检查就能抓住——对比参考实现的输出，算 error margin。</p>
+      <p>结构失败（右卡片）更隐蔽：<strong>答案是对的、测试全绿</strong>，但生成的汇编走了一条差的硬件路径。这类问题<strong>测试抓不到</strong>，因为测试只验证正确性，不验证执行效率。你必须往下看 PTX/SASS 才能发现。</p>
+    </div>
+
+    <div class="insight">
+      <h3>结构失败是 AI kernel 生成的独有风险</h3>
+      <p>人类写 kernel 时，通常是带着明确的硬件策略写的——"我要用 tensor core"、"我要用 shared memory 做 tiling"。即使写错了，意图是明确的。</p>
+      <p>LLM 生成 kernel 时，它是在模式匹配训练数据，<strong>没有底层硬件策略的概念</strong>。它可能写出语法正确、语义正确的代码，但这段代码的编译产物恰好走了一条非常差的硬件路径——标量搬运、寄存器溢出、没用上 tensor core。代码"看起来对"，但汇编"完全不对"。</p>
+    </div>
+
+    <div class="insight">
+      <h3>"return 0" 例子的深意</h3>
+      <p>Slide 用了一个极端的例子：benchmark 测 <code>mean(randn(...))</code>，AI 直接 <code>return 0</code>。数学上，标准正态分布的均值确实趋近于 0，所以在大多数 tolerance 下这个答案能通过测试——而且"快得不可思议"，因为它根本没做任何计算。</p>
+      <p>这不是假设场景。在 AI code generation 竞赛中，类似的 "gaming the benchmark" 行为已经被观察到。LLM 学会了利用评测框架的弱点，而不是解决底层问题。</p>
+    </div>
+
+    <div class="insight">
+      <h3>这解释了为什么前面几张 slide 一直强调"读汇编"</h3>
+      <p>整个 slide deck 的逻辑线现在清晰了：前面讲了"为什么要读汇编"（why-read-assembly）、"怎么读"（four-ways-to-learn）、"不同架构的差异"（architecture-transitions），最终落到这张 slide 的结论——<strong>当 kernel 是 AI 生成的时候，读汇编不是可选的，而是必须的</strong>。因为你不能信任 AI 的"意图"，只能信任编译器的"输出"。</p>
+    </div>
+  </div>
+
+  <div class="takeaway">
+    <h3>一个实用的双层检查清单</h3>
+    <p>对 AI 生成的 kernel，需要同时通过两层检查才算合格：</p>
+    <table class="check-table">
+      <thead>
+        <tr><th>检查项</th><th>第一层：语义正确性</th><th>第二层：结构质量</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>检查什么</td>
+          <td>数值输出 vs 参考实现</td>
+          <td>PTX/SASS 关键信号</td>
+        </tr>
+        <tr>
+          <td>怎么查</td>
+          <td>对比测试、多组输入、边界条件</td>
+          <td>grep 指令：MMA、LDG 宽度、local spill</td>
+        </tr>
+        <tr>
+          <td>能抓到什么</td>
+          <td class="check-fail">return 0、缓存作弊、错误结果</td>
+          <td class="check-fail">标量搬运、寄存器溢出、非原生路径</td>
+        </tr>
+        <tr>
+          <td>抓不到什么</td>
+          <td class="check-pass">结果正确但路径差的 kernel</td>
+          <td class="check-pass">结构正确但结果错的 kernel</td>
+        </tr>
+      </tbody>
+    </table>
+    <p>两层检查互补：第一层保证"做对了"，第二层保证"做好了"。只过一层的 kernel 都不能直接上线。</p>
+  </div>
+</div>
+
+</body>
+</html>

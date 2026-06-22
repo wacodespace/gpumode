@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PTX/SASS 作为生成 Kernel 的编译产物检查器</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: #fafafa;
+  color: #1a1a1a;
+  padding: 3rem 2rem;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+.label {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid #ccc;
+  margin-bottom: 0.8rem;
+}
+.label--red { color: #a04040; border-color: #c88; }
+.label--gold { color: #8b6914; border-color: #d4a843; }
+.label--blue { color: #4a6fa5; border-color: #4a6fa5; }
+h1 {
+  font-size: 2rem;
+  font-weight: 800;
+  margin-bottom: 0.5rem;
+}
+.subtitle {
+  font-size: 0.92rem;
+  color: #666;
+  margin-bottom: 2.5rem;
+}
+
+/* four-stage pipeline */
+.stages {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+  margin-bottom: 1.8rem;
+}
+.stage {
+  border: 1px solid #e0e0e0;
+  background: #fff;
+  padding: 1.2rem;
+}
+.stage-num {
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #888;
+  margin-bottom: 0.6rem;
+}
+.stage-items {
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 0.78rem;
+  line-height: 1.8;
+  color: #555;
+}
+
+/* four explanation cards */
+.explanations {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+.explain-card {
+  border: 1px solid #e0e0e0;
+  background: #fff;
+  padding: 1.2rem;
+}
+.explain-card h3 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  margin-bottom: 0.6rem;
+}
+.explain-card p {
+  font-size: 0.8rem;
+  color: #555;
+  line-height: 1.65;
+}
+
+/* pipeline diagram */
+.pipeline {
+  border: 1px solid #e0e0e0;
+  background: #fff;
+  padding: 1.5rem 2rem;
+  margin-bottom: 2rem;
+}
+.pipeline-label {
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #888;
+  margin-bottom: 1rem;
+}
+.pipeline-row {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr auto 1fr auto 1fr;
+  gap: 0;
+  align-items: stretch;
+}
+.pipe-box {
+  border: 1px solid #e0e0e0;
+  padding: 0.8rem 1rem;
+  background: #fafafa;
+}
+.pipe-box .pipe-title {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #888;
+  margin-bottom: 0.3rem;
+}
+.pipe-box .pipe-content {
+  font-size: 0.78rem;
+  color: #555;
+  line-height: 1.5;
+}
+.pipe-box--bench { border-top: 2px solid #aaa; }
+.pipe-box--agent { border-top: 2px solid #4a6fa5; }
+.pipe-box--oracle { border-top: 2px solid #8b6914; }
+.pipe-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.4rem;
+  color: #bbb;
+  font-size: 1rem;
+}
+
+/* fork output */
+.fork-outputs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.2rem;
+  margin-top: 1rem;
+  margin-left: calc(75% - 0.5rem);
+  max-width: 450px;
+}
+.fork-box {
+  border: 1px solid #e0e0e0;
+  padding: 0.8rem 1rem;
+}
+.fork-box .fork-title {
+  font-size: 0.7rem;
+  font-weight: 700;
+  margin-bottom: 0.2rem;
+}
+.fork-box .fork-desc {
+  font-size: 0.72rem;
+  color: #888;
+  line-height: 1.4;
+}
+.fork-box--bad { border-left: 3px solid #c0392b; background: #fdf8f8; }
+.fork-box--bad .fork-title { color: #c0392b; }
+.fork-box--good { border-left: 3px solid #2e7d32; background: #f4faf4; }
+.fork-box--good .fork-title { color: #2e7d32; }
+
+/* bottom bar */
+.bottom-bar {
+  border: 1px solid #e0e0e0;
+  border-left: 4px solid #8b6914;
+  background: #fff;
+  padding: 1rem 1.5rem;
+  font-size: 0.9rem;
+  color: #333;
+  line-height: 1.6;
+  margin-bottom: 2.5rem;
+}
+
+/* summary */
+.summary {
+  border: 1px solid #e0e0e0;
+  border-top: 3px solid #4a6fa5;
+  background: #fff;
+  padding: 2rem;
+}
+.summary h2 {
+  font-size: 1.3rem;
+  font-weight: 700;
+  margin-bottom: 1.2rem;
+  color: #2c3e50;
+}
+.summary-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+.insight {
+  border: 1px solid #e8e8e3;
+  padding: 1.2rem 1.5rem;
+  background: #f9f9f6;
+}
+.insight h3 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+.insight p {
+  font-size: 0.82rem;
+  color: #555;
+  line-height: 1.7;
+  margin-bottom: 0.5rem;
+}
+.insight p:last-child { margin-bottom: 0; }
+.takeaway {
+  border: 1px solid #e0e0e0;
+  border-left: 4px solid #4a6fa5;
+  background: #f5f8fb;
+  padding: 1.2rem 1.5rem;
+}
+.takeaway h3 {
+  font-size: 1rem;
+  font-weight: 700;
+  margin-bottom: 0.6rem;
+}
+.takeaway p {
+  font-size: 0.85rem;
+  color: #555;
+  line-height: 1.7;
+  margin-bottom: 0.6rem;
+}
+.takeaway p:last-child { margin-bottom: 0; }
+
+/* oracle detail table */
+.oracle-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+  margin: 1rem 0;
+}
+.oracle-table th {
+  text-align: left;
+  padding: 0.5rem 0.8rem;
+  border-bottom: 2px solid #ddd;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #888;
+}
+.oracle-table td {
+  padding: 0.5rem 0.8rem;
+  border-bottom: 1px solid #eee;
+  color: #555;
+  line-height: 1.5;
+}
+.oracle-table td:first-child {
+  font-weight: 600;
+  color: #1a1a1a;
+  white-space: nowrap;
+}
+.oracle-table code {
+  background: #f0f0e8;
+  padding: 0.1rem 0.3rem;
+  font-size: 0.76rem;
+}
+
+@media (max-width: 900px) {
+  .stages { grid-template-columns: 1fr 1fr; }
+  .explanations { grid-template-columns: 1fr; }
+  .summary-grid { grid-template-columns: 1fr; }
+  .pipeline-row { grid-template-columns: 1fr; gap: 0.3rem; }
+  .pipe-arrow { transform: rotate(90deg); padding: 0.2rem 0; }
+  .fork-outputs { margin-left: 0; max-width: 100%; }
+}
+</style>
+</head>
+<body>
+
+<div class="label">验证架构</div>
+<h1>PTX/SASS 作为生成 Kernel 的编译产物检查器</h1>
+<p class="subtitle">四阶段验证流水线：从正确性隔离到 profiler 确认，编译产物审查是不可或缺的第三道关卡。</p>
+
+<!-- Four validation stages -->
+<div class="stages">
+  <div class="stage">
+    <div class="stage-num">1. 正确性隔离</div>
+    <div class="stage-items">
+      reference checks<br>
+      randomized inputs<br>
+      shape coverage
+    </div>
+  </div>
+  <div class="stage">
+    <div class="stage-num">2. Benchmark 隔离</div>
+    <div class="stage-items">
+      child process<br>
+      timing integrity<br>
+      anti-cheat harness
+    </div>
+  </div>
+  <div class="stage">
+    <div class="stage-num">3. PTX/SASS 编译产物检查器</div>
+    <div class="stage-items">
+      native path?<br>
+      spills?<br>
+      vector width?
+    </div>
+  </div>
+  <div class="stage">
+    <div class="stage-num">4. Profiler 验证</div>
+    <div class="stage-items">
+      Nsight<br>
+      microbench<br>
+      hardware counters
+    </div>
+  </div>
+</div>
+
+<!-- Four explanation cards -->
+<div class="explanations">
+  <div class="explain-card">
+    <h3>正在发生什么</h3>
+    <p>GPU Mode 排行榜、KernelBench、KernelAgent、K-Search、TritonBench 式任务，以及更新的 KernelBench 变体，正在把 kernel 编写变成一个<strong>搜索-评估循环</strong>。</p>
+  </div>
+  <div class="explain-card">
+    <h3>为什么仅靠计时不够</h3>
+    <p>生成的代码可以通过测试并且看起来很快，但实际上在利用 harness 漏洞、跳过计算、没命中 tensor core、标量化搬运，或者严重 spill。</p>
+  </div>
+  <div class="explain-card">
+    <h3>解析层</h3>
+    <p>我们将 PTX/SASS 解析为结构化的指令、操作数、地址空间、寄存器、属性和源码位置，然后再做模式检测。这使得分析结果<strong>可 diff</strong>。</p>
+  </div>
+  <div class="explain-card">
+    <h3>检查器检查什么</h3>
+    <p>应检查生成的路径是否包含：架构原生指令、正确的内存宽度、local traffic、barrier 结构，以及明显的回退行为。</p>
+  </div>
+</div>
+
+<!-- Pipeline diagram -->
+<div class="pipeline">
+  <div class="pipeline-label">端到端流水线</div>
+  <div class="pipeline-row">
+    <div class="pipe-box pipe-box--bench">
+      <div class="pipe-title">Benchmarks</div>
+      <div class="pipe-content">
+        KernelBench<br>
+        GPU Mode Leaderboard<br>
+        TritonBench-style tasks<br>
+        KernelAgent / K-Search
+      </div>
+    </div>
+    <div class="pipe-arrow">→</div>
+    <div class="pipe-box pipe-box--agent">
+      <div class="pipe-title">Agent / Search Loop</div>
+      <div class="pipe-content">
+        搜索-评估循环<br>
+        生成候选 kernel<br>
+        迭代优化
+      </div>
+    </div>
+    <div class="pipe-arrow">→</div>
+    <div class="pipe-box pipe-box--oracle">
+      <div class="pipe-title">Compiled-Output Checker</div>
+      <div class="pipe-content">
+        编译产物检查器<br>
+        解析 PTX/SASS<br>
+        结构化审查
+      </div>
+    </div>
+    <div class="pipe-arrow">→</div>
+    <div class="pipe-box" style="border-top: 2px solid #888; background: #f5f5f0;">
+      <div class="pipe-title">分流判定</div>
+      <div class="pipe-content">
+        硬件路径合格？<br>
+        ↗ 合格 → 上线<br>
+        ↘ 不合格 → 拒绝
+      </div>
+    </div>
+  </div>
+  <div class="fork-outputs">
+    <div class="fork-box fork-box--bad">
+      <div class="fork-title">SLOP KERNEL</div>
+      <div class="fork-desc">正确但无硬件依据<br>(correct but ungrounded)</div>
+    </div>
+    <div class="fork-box fork-box--good">
+      <div class="fork-title">HARDWARE-GROUNDED KERNEL</div>
+      <div class="fork-desc">经过测量 + 结构验证<br>(measured + structured)</div>
+    </div>
+  </div>
+</div>
+
+<div class="bottom-bar">
+  <strong>计时只能告诉你"快不快"。编译产物检查器告诉你"快的原因对不对"——是真的用了原生硬件路径，还是恰好在这组输入上看起来快。</strong>
+</div>
+
+<!-- ============ Summary ============ -->
+<div class="summary">
+  <div class="label label--blue">总结与理解</div>
+  <h2>从"跑得快就行"到"快得有理有据"</h2>
+
+  <div class="summary-grid">
+    <div class="insight">
+      <h3>四阶段流水线是对前几张 slide 的系统化总结</h3>
+      <p>前面的 slide 分别讲了：AI kernel 会语义作弊（→ 需要正确性隔离）、会 benchmark gaming（→ 需要 benchmark 隔离）、会走差的硬件路径（→ 需要 PTX/SASS 审查）、profiler 能量化最终效果（→ 需要 profiler 验证）。这张 slide 把这四个散落的观点<strong>编排成了一条完整的验证流水线</strong>。</p>
+      <p>关键是顺序：先确保<strong>答案对</strong>（阶段 1），再确保<strong>没作弊</strong>（阶段 2），然后确保<strong>硬件路径对</strong>（阶段 3），最后用 profiler <strong>量化确认</strong>（阶段 4）。跳过任何一层都留下盲区。</p>
+    </div>
+
+    <div class="insight">
+      <h3>"编译产物检查器"的定位：不判对错，判路径</h3>
+      <p>传统的测试只验证数值正确性——输出对不对。编译产物检查器做的是<strong>结构审查</strong>：不是判断"答案对不对"，而是判断"生成的硬件路径好不好"——有没有命中原生指令、内存宽度对不对、有没有意外 spill。</p>
+      <p>这和前面 NCU vs PTX/SASS 那张 slide 的观点一致：NCU 测量运行时效果，编译产物检查器审查编译结构。两者结合才构成完整的质量判断。</p>
+    </div>
+
+    <div class="insight">
+      <h3>"Slop Kernel" 是这张 slide 引入的核心概念</h3>
+      <p>"Slop"（低质量内容）这个词从 AI 生成文本领域借来，用在 kernel 上特别贴切：<strong>correct but ungrounded</strong>——答案对了，但没有硬件层面的依据。它可能恰好在这组输入上快，换个输入大小就慢了；它可能用了标量搬运凑巧没被内存带宽限住；它可能 spill 了但 L1 命中率够高所以没暴露问题。</p>
+      <p>没有经过编译产物审查的 kernel，你无法区分"真的好"和"凑巧好"。这就是 slop kernel 的危险——它能通过所有传统测试，但在生产环境、大规模输入、不同硬件上可能直接崩溃。</p>
+    </div>
+
+    <div class="insight">
+      <h3>"可 diff"的分析是工程化的关键</h3>
+      <p>Parser layer 那段提到"将 PTX/SASS 解析为结构化数据，使分析可 diff"。这个细节很重要：如果检查器的输出是人类可读的文本报告，那它就不能嵌入自动化流水线。但如果是结构化的、可 diff 的数据（指令列表、地址空间标注、寄存器使用统计），那它就可以：</p>
+      <p><strong>1.</strong> 和上一版本的编译产物做 diff，看改动有没有引入回退。<br>
+         <strong>2.</strong> 在 CI 里设门禁：出现 <code>st.local</code> 就拒绝合并。<br>
+         <strong>3.</strong> 作为 agent 搜索循环的一部分，自动淘汰结构不合格的候选 kernel。</p>
+    </div>
+  </div>
+
+  <div class="takeaway">
+    <h3>四层防线各自的盲区——为什么缺一不可</h3>
+    <table class="oracle-table">
+      <thead>
+        <tr><th>验证阶段</th><th>能抓到什么</th><th>抓不到什么</th><th>典型工具</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>1. 正确性隔离</td>
+          <td>错误结果、<code>return 0</code> 式作弊</td>
+          <td>答案对但路径差的 kernel</td>
+          <td>参考实现对比、随机输入、shape 覆盖</td>
+        </tr>
+        <tr>
+          <td>2. Benchmark 隔离</td>
+          <td>计时器 monkey-patch、harness 利用</td>
+          <td>合法但低效的执行路径</td>
+          <td>子进程隔离、计时完整性校验</td>
+        </tr>
+        <tr>
+          <td>3. 编译产物检查器</td>
+          <td>非原生指令、spill、标量搬运、回退路径</td>
+          <td>静态结构无法证明运行时开销</td>
+          <td>PTX/SASS 解析器、模式匹配、diff</td>
+        </tr>
+        <tr>
+          <td>4. Profiler 验证</td>
+          <td>实际的 stall、带宽、tensor 利用率</td>
+          <td>不知道"预期"是什么，无法判断回退</td>
+          <td>Nsight Compute、microbench、硬件计数器</td>
+        </tr>
+      </tbody>
+    </table>
+    <p>底部的流水线图是这张 slide 的核心画面：benchmark 喂给 agent/search loop，agent 生成候选 kernel，<strong>编译产物检查器作为分流器</strong>——合格的成为 hardware-grounded kernel（经过测量 + 结构验证），不合格的被标记为 slop kernel（正确但无硬件依据）。这条流水线的价值在于：<strong>slop kernel 在到达 profiler 之前就被拦截了</strong>，节省了大量无效的 profiling 时间。</p>
+    <p>这也回应了整个 slide deck 的主线：在 AI 生成 kernel 的时代，"搜索-评估循环"中缺少结构审查这一环，就等于在用一半的标准筛选候选方案。加入编译产物检查器后，搜索空间的质量才是完整可控的。</p>
+  </div>
+</div>
+
+</body>
+</html>

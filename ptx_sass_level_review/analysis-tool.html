@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>我们在构建什么：PTX/SASS 分析工具</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: #fafafa;
+  color: #1a1a1a;
+  padding: 3rem 2rem;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+.label {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid #ccc;
+  margin-bottom: 0.8rem;
+}
+.label--red { color: #a04040; border-color: #c88; }
+.label--gold { color: #8b6914; border-color: #d4a843; }
+.label--blue { color: #4a6fa5; border-color: #4a6fa5; }
+h1 {
+  font-size: 2rem;
+  font-weight: 800;
+  margin-bottom: 0.5rem;
+}
+.subtitle {
+  font-size: 0.92rem;
+  color: #666;
+  margin-bottom: 2.5rem;
+}
+
+/* four-step pipeline */
+.pipeline {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr auto 1fr auto 1fr;
+  gap: 0;
+  align-items: stretch;
+  margin-bottom: 2rem;
+}
+.step {
+  border: 1px solid #e0e0e0;
+  background: #fff;
+  padding: 1.5rem;
+}
+.step-num {
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #8b6914;
+  margin-bottom: 0.8rem;
+}
+.step h2 {
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+.step-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.6rem;
+  color: #ccc;
+  font-size: 1.2rem;
+}
+
+/* three boundary cards */
+.boundaries {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 1.2rem;
+  margin-bottom: 2rem;
+}
+.boundary {
+  border: 1px solid #e0e0e0;
+  background: #fff;
+  padding: 1.2rem 1.5rem;
+}
+.boundary-tag {
+  display: inline-block;
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid #ccc;
+  margin-bottom: 0.8rem;
+  color: #888;
+}
+.boundary p {
+  font-size: 0.83rem;
+  color: #555;
+  line-height: 1.65;
+}
+
+/* bottom bar */
+.bottom-bar {
+  border: 1px solid #e0e0e0;
+  border-left: 4px solid #8b6914;
+  background: #fff;
+  padding: 1rem 1.5rem;
+  font-size: 0.9rem;
+  color: #333;
+  line-height: 1.6;
+  margin-bottom: 2.5rem;
+}
+
+/* summary */
+.summary {
+  border: 1px solid #e0e0e0;
+  border-top: 3px solid #4a6fa5;
+  background: #fff;
+  padding: 2rem;
+}
+.summary h2 {
+  font-size: 1.3rem;
+  font-weight: 700;
+  margin-bottom: 1.2rem;
+  color: #2c3e50;
+}
+.summary-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+.insight {
+  border: 1px solid #e8e8e3;
+  padding: 1.2rem 1.5rem;
+  background: #f9f9f6;
+}
+.insight h3 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+.insight p {
+  font-size: 0.82rem;
+  color: #555;
+  line-height: 1.7;
+  margin-bottom: 0.5rem;
+}
+.insight p:last-child { margin-bottom: 0; }
+.takeaway {
+  border: 1px solid #e0e0e0;
+  border-left: 4px solid #4a6fa5;
+  background: #f5f8fb;
+  padding: 1.2rem 1.5rem;
+}
+.takeaway h3 {
+  font-size: 1rem;
+  font-weight: 700;
+  margin-bottom: 0.6rem;
+}
+.takeaway p {
+  font-size: 0.85rem;
+  color: #555;
+  line-height: 1.7;
+  margin-bottom: 0.6rem;
+}
+.takeaway p:last-child { margin-bottom: 0; }
+
+/* use-case table */
+.usecase-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+  margin: 1rem 0;
+}
+.usecase-table th {
+  text-align: left;
+  padding: 0.5rem 0.8rem;
+  border-bottom: 2px solid #ddd;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #888;
+}
+.usecase-table td {
+  padding: 0.5rem 0.8rem;
+  border-bottom: 1px solid #eee;
+  color: #555;
+  line-height: 1.5;
+}
+.usecase-table td:first-child {
+  font-weight: 600;
+  color: #1a1a1a;
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .pipeline { grid-template-columns: 1fr; gap: 0.3rem; }
+  .step-arrow { transform: rotate(90deg); padding: 0.2rem 0; }
+  .boundaries { grid-template-columns: 1fr; }
+  .summary-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<div class="label label--gold">工具层</div>
+<h1>我们在构建什么：PTX/SASS 分析工具</h1>
+<p class="subtitle">一个结构化的编译产物审查层，服务于 kernel 开发、生成式 kernel、架构迁移和 CI 回归检查。</p>
+
+<!-- Four-step pipeline -->
+<div class="pipeline">
+  <div class="step">
+    <div class="step-num">01 / Artifacts</div>
+    <h2>收集 PTX/SASS</h2>
+  </div>
+  <div class="step-arrow">→</div>
+  <div class="step">
+    <div class="step-num">02 / Parser</div>
+    <h2>解析代码</h2>
+  </div>
+  <div class="step-arrow">→</div>
+  <div class="step">
+    <div class="step-num">03 / Patterns</div>
+    <h2>特征扫描</h2>
+  </div>
+  <div class="step-arrow">→</div>
+  <div class="step">
+    <div class="step-num">04 / Findings</div>
+    <h2>排序发现</h2>
+  </div>
+</div>
+
+<!-- Three boundary cards -->
+<div class="boundaries">
+  <div class="boundary">
+    <div class="boundary-tag">不是 Profiler</div>
+    <p>它不告诉你"这个 kernel 跑了多久"——它告诉你的是<strong>编译器生成了什么</strong>：用了哪种 MMA、有没有 spill、搬运是标量还是向量。这些事实在你跑 profiler 之前就已经写在二进制里了。</p>
+  </div>
+  <div class="boundary">
+    <div class="boundary-tag">不是编译器</div>
+    <p>它不会重写 kernel；它<strong>缩小工程搜索空间</strong>，告诉你应该关注什么。</p>
+  </div>
+  <div class="boundary">
+    <div class="boundary-tag">可 Diff 的产物</div>
+    <p>分析结果可以<strong>跨 target、跨编译器版本、跨编译选项、跨生成候选</strong>进行比较。</p>
+  </div>
+</div>
+
+<div class="bottom-bar">
+  <strong>这个工具把反汇编转化为排序的、有证据支撑的假设——告诉你下一步应该测量和检查什么。</strong>
+</div>
+
+<!-- ============ Summary ============ -->
+<div class="summary">
+  <div class="label label--blue">总结与理解</div>
+  <h2>从"看汇编"到"分析汇编"的工程化跨越</h2>
+
+  <div class="summary-grid">
+    <div class="insight">
+      <h3>四步流水线把"读汇编"变成了可重复的工程流程</h3>
+      <p>前面所有 slide 讲的都是"为什么要读 PTX/SASS"和"读什么"。这张 slide 终于回答了"<strong>怎么规模化地读</strong>"。四步流水线的设计很清楚：</p>
+      <p><strong>收集</strong>——从编译产物中提取 PTX 和 SASS（cuobjdump、nvdisasm）。<br>
+         <strong>解析</strong>——把文本形式的汇编变成结构化数据（指令、操作数、地址空间、寄存器）。<br>
+         <strong>检测</strong>——在结构化数据上跑模式匹配（有没有 spill？用了哪种 MMA？搬运是标量还是向量？）。<br>
+         <strong>排序</strong>——按严重程度排列发现，产出一份可操作的报告。</p>
+      <p>这四步把"人类盯着汇编找问题"变成了"工具自动扫描 + 人类审核结果"。</p>
+    </div>
+
+    <div class="insight">
+      <h3>三个边界声明定义了工具不做什么</h3>
+      <p>这三张边界卡片是工具设计中最聪明的部分——清楚地画了三条线：</p>
+      <p><strong>不是 profiler</strong>：工具不会告诉你"这个 kernel 跑了多少毫秒"。它只说"这个 kernel 的编译产物里有 <code>st.local</code>，这可能是个问题"。性能结论留给 NCU。</p>
+      <p><strong>不是编译器</strong>：工具不会自动修复问题。它告诉你"编译器选了 HMMA 而不是 WGMMA"，修改策略是你的事。它缩小搜索空间，不替代决策。</p>
+      <p><strong>可 diff</strong>：这是工具最具工程价值的特性——分析结果是结构化的，可以跨版本比较。改了一行源码，重新编译，diff 一下分析结果，就知道编译器的决策变了没有。</p>
+    </div>
+
+    <div class="insight">
+      <h3>"排序的、有证据支撑的假设"——不是结论，是假设</h3>
+      <p>底部那句总结特意用了"hypotheses"而不是"conclusions"。这个用词揭示了工具的哲学：<strong>静态分析不能证明性能问题，只能提出假设</strong>。</p>
+      <p>看到 <code>st.local</code>/<code>ld.local</code> 不等于"性能一定差"——如果那段代码不在热路径上，spill 可能完全不影响性能。看到 HMMA 而不是 WGMMA 不等于"一定要换"——可能问题的 tile size 就是不适合 warpgroup 操作。</p>
+      <p>工具产出的是<strong>带优先级的审查清单</strong>，最终判断还是需要 profiler（NCU）来验证。这和前面 slide 的观点完美闭合：PTX/SASS 提假设，NCU 验证假设。</p>
+    </div>
+
+    <div class="insight">
+      <h3>四个使用场景覆盖了 GPU kernel 开发的完整生命周期</h3>
+      <p>subtitle 列出了四个场景，每个对应一种不同的使用模式：</p>
+      <p><strong>Kernel 开发</strong>——手写 kernel 时，编译完跑一次分析，确认编译器的决策符合预期。<br>
+         <strong>生成式 kernel</strong>——AI agent 或搜索循环生成的候选 kernel，用分析工具做自动化过滤（上一张 slide 的 oracle）。<br>
+         <strong>架构迁移</strong>——从 Ampere 迁到 Hopper 时，diff 两个 target 的分析结果，看哪些路径变了。<br>
+         <strong>CI 回归</strong>——每次 commit 都跑一次分析，确保编译产物没有意外回退（新 spill、指令降级）。</p>
+    </div>
+  </div>
+
+  <div class="takeaway">
+    <h3>这个工具在整个 slide deck 中的位置</h3>
+    <table class="usecase-table">
+      <thead>
+        <tr><th>前面的 Slide</th><th>提出了什么问题</th><th>这个工具怎么解决</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Why Read Assembly</td>
+          <td>需要读汇编，但大多数人不会</td>
+          <td>自动化解析 + 模式检测，降低门槛</td>
+        </tr>
+        <tr>
+          <td>Architecture Transitions</td>
+          <td>跨代迁移时编译产物可能完全不同</td>
+          <td>跨 target diff，自动发现路径差异</td>
+        </tr>
+        <tr>
+          <td>AI Kernel Failures</td>
+          <td>生成的 kernel 可能结构性失败</td>
+          <td>作为 oracle 嵌入搜索循环，过滤 slop kernel</td>
+        </tr>
+        <tr>
+          <td>Miniature Runtimes</td>
+          <td>现代 kernel 协调结构复杂</td>
+          <td>检测五个控制平面是否正确落地</td>
+        </tr>
+        <tr>
+          <td>NCU vs PTX/SASS</td>
+          <td>NCU 测症状，PTX/SASS 找病因</td>
+          <td>自动产出"病因假设清单"，交给 NCU 验证</td>
+        </tr>
+        <tr>
+          <td>NCU Intended Binary</td>
+          <td>NCU 不知道你的预期</td>
+          <td>工具编码了"预期"（应有的原生路径），自动对比</td>
+        </tr>
+      </tbody>
+    </table>
+    <p>这张 slide 是整个 deck 的落地方案：前面所有的观察、分析、警告，最终指向一个可操作的工具。它不是万能的——不替代 profiler，不替代编译器，不替代人类判断。但它填补了一个关键空白：<strong>让编译产物审查从"专家手工活"变成"工程化流程"</strong>，使得这种审查可以自动化、可规模化、可集成到 CI/CD 流水线中。</p>
+  </div>
+</div>
+
+</body>
+</html>

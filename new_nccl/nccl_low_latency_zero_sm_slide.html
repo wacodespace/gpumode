@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>低延迟与 Zero-SM 集合通信</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif;
+            background: #0a0a0a;
+            color: #e0e0e0;
+            min-height: 100vh;
+            padding: 40px 20px;
+        }
+
+        .container { max-width: 1080px; margin: 0 auto; }
+
+        h1 { text-align: center; font-size: 2.1rem; color: #fff; margin-bottom: 6px; }
+        .subtitle { text-align: center; color: #76b900; font-size: 1.1rem; margin-bottom: 48px; }
+
+        /* ---- 顶部流程：CPU 准备 → 内核执行 ---- */
+        .flow-top {
+            display: flex;
+            align-items: stretch;
+            gap: 0;
+            margin-bottom: 40px;
+        }
+
+        .flow-box {
+            flex: 1;
+            background: #141414;
+            border: 1px solid #2a2a2a;
+            border-radius: 10px;
+            padding: 22px 24px;
+        }
+
+        .flow-box h3 {
+            font-size: 1rem;
+            color: #76b900;
+            margin-bottom: 14px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #222;
+        }
+
+        .flow-box ol {
+            list-style: none;
+            counter-reset: fl;
+            padding: 0;
+        }
+
+        .flow-box ol li {
+            counter-increment: fl;
+            position: relative;
+            padding-left: 28px;
+            margin-bottom: 10px;
+            line-height: 1.65;
+            color: #bbb;
+            font-size: 0.92rem;
+        }
+
+        .flow-box ol li::before {
+            content: counter(fl);
+            position: absolute; left: 0; top: 1px;
+            width: 20px; height: 20px; border-radius: 50%;
+            background: #1e2a0a; border: 1px solid #76b90055;
+            color: #76b900; font-size: 0.72rem; font-weight: 700;
+            display: flex; align-items: center; justify-content: center;
+        }
+
+        .flow-arrow {
+            display: flex; align-items: center; justify-content: center;
+            width: 60px; flex-shrink: 0;
+            font-size: 2rem; color: #444;
+        }
+
+        /* ---- 三模式对比卡片 ---- */
+        .modes {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 16px;
+            margin-bottom: 44px;
+        }
+
+        .mode-card {
+            background: #111;
+            border: 1px solid #222;
+            border-radius: 12px;
+            padding: 22px 20px;
+            position: relative;
+        }
+
+        .mode-card.default  { border-top: 3px solid #5588cc; }
+        .mode-card.symk     { border-top: 3px solid #76b900; }
+        .mode-card.zerosm   { border-top: 3px solid #cc8844; }
+
+        .mode-label {
+            font-size: 0.75rem;
+            font-weight: 700;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+        }
+        .mode-card.default .mode-label  { color: #5588cc; }
+        .mode-card.symk .mode-label     { color: #76b900; }
+        .mode-card.zerosm .mode-label   { color: #cc8844; }
+
+        .mode-card h3 {
+            font-size: 1.05rem;
+            color: #fff;
+            margin-bottom: 14px;
+        }
+
+        .mode-card .diagram {
+            background: #0d0d0d;
+            border: 1px solid #1e1e1e;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 14px;
+            min-height: 120px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .d-row {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .d-box {
+            font-size: 0.72rem;
+            padding: 5px 10px;
+            border-radius: 4px;
+            text-align: center;
+            line-height: 1.4;
+        }
+
+        .d-box.gpu     { background: #1a2a0a; border: 1px solid #76b90044; color: #a0cc60; }
+        .d-box.cpu     { background: #1a1a2a; border: 1px solid #5588cc44; color: #7799dd; }
+        .d-box.nic     { background: #1a1a1a; border: 1px solid #444; color: #999; }
+        .d-box.mem     { background: #1e1e1e; border: 1px solid #333; color: #aaa; }
+        .d-box.ce      { background: #2a1a0a; border: 1px solid #cc884444; color: #cc8844; }
+
+        .d-arrow { color: #555; font-size: 0.8rem; }
+
+        .mode-card .detail {
+            font-size: 0.82rem;
+            color: #999;
+            line-height: 1.6;
+        }
+
+        .mode-card .detail strong { color: #ccc; }
+
+        .mode-tag {
+            display: inline-block;
+            font-size: 0.7rem;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-weight: 600;
+            margin-top: 8px;
+        }
+
+        .mode-card.default .mode-tag  { background: #1a1a2a; color: #5588cc; border: 1px solid #5588cc44; }
+        .mode-card.symk .mode-tag     { background: #1e2a0a; color: #76b900; border: 1px solid #76b90044; }
+        .mode-card.zerosm .mode-tag   { background: #2a1a0a; color: #cc8844; border: 1px solid #cc884444; }
+
+        .info-table {
+            width: 100%;
+            font-size: 0.8rem;
+            margin-top: 10px;
+        }
+
+        .info-table td {
+            padding: 4px 0;
+            color: #999;
+            vertical-align: top;
+        }
+
+        .info-table td:first-child {
+            color: #777;
+            width: 60px;
+            white-space: nowrap;
+        }
+
+        .info-table td:last-child { color: #bbb; }
+
+        /* ---- 总结 ---- */
+        .card {
+            background: #111;
+            border: 1px solid #222;
+            border-radius: 12px;
+            padding: 32px 36px;
+            margin-bottom: 24px;
+        }
+
+        .card h2 {
+            color: #76b900; font-size: 1.3rem;
+            margin-bottom: 18px; border-bottom: 1px solid #222; padding-bottom: 10px;
+        }
+
+        .card h3 { color: #ccc; font-size: 1.02rem; margin: 20px 0 10px; }
+
+        .card ul { list-style: none; padding-left: 0; }
+
+        .card li {
+            position: relative; padding-left: 20px;
+            margin-bottom: 10px; line-height: 1.75; color: #bbb;
+        }
+        .card li::before { content: "▸"; position: absolute; left: 0; color: #76b900; }
+        .card li strong { color: #e0e0e0; }
+
+        code {
+            background: #1e1e1e; padding: 2px 7px; border-radius: 3px;
+            font-size: 0.88em; color: #76b900;
+            font-family: "SF Mono", "Fira Code", monospace;
+        }
+
+        .tldr {
+            background: linear-gradient(135deg, #76b900 0%, #5a8f00 100%);
+            border-radius: 10px; padding: 22px 30px; text-align: center;
+            color: #000; font-size: 1.02rem; font-weight: 600; line-height: 1.7;
+        }
+
+        /* 对比表格 */
+        .cmp-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 16px 0 8px;
+            font-size: 0.88rem;
+        }
+
+        .cmp-table th {
+            background: #1a1a1a;
+            color: #76b900;
+            text-align: left;
+            padding: 10px 14px;
+            border-bottom: 2px solid #333;
+            font-weight: 600;
+        }
+
+        .cmp-table td {
+            padding: 10px 14px;
+            border-bottom: 1px solid #1e1e1e;
+            color: #bbb;
+        }
+
+        .cmp-table tr:hover td { background: #151515; }
+    </style>
+</head>
+<body>
+<div class="container">
+
+    <h1>低延迟与 Zero-SM 集合通信</h1>
+    <p class="subtitle">Low Latency and Zero-SM Collective</p>
+
+    <!-- ===== 顶部流程 ===== -->
+    <div class="flow-top">
+        <div class="flow-box">
+            <h3>CPU 准备阶段</h3>
+            <ol>
+                <li>入队操作（Enqueue operation）</li>
+                <li>选择执行模式：<code>symk</code>、<code>regular</code> 或 <code>ce</code> 模式</li>
+                <li>选择算法（algo）、协议（protocol）、块数（nBlocks）</li>
+            </ol>
+        </div>
+        <div class="flow-arrow">➤</div>
+        <div class="flow-box">
+            <h3>内核执行阶段</h3>
+            <ol>
+                <li><strong>Regular：</strong>CPU 和 SM 交互推进</li>
+                <li><strong>Symk：</strong>仅 SM 驱动</li>
+                <li><strong>CE：</strong>零 SM 占用（NVL 场景）</li>
+            </ol>
+        </div>
+    </div>
+
+    <!-- ===== 三种模式对比 ===== -->
+    <div class="modes">
+
+        <!-- Default -->
+        <div class="mode-card default">
+            <div class="mode-label">Default（默认模式）</div>
+            <h3>CPU + GPU 协作</h3>
+            <div class="diagram">
+                <div class="d-row">
+                    <div class="d-box gpu">SM × N</div>
+                    <span class="d-arrow">→</span>
+                    <div class="d-box mem">GPU Mem</div>
+                    <span class="d-arrow">→</span>
+                    <div class="d-box mem">Proxy Buffer</div>
+                </div>
+                <div class="d-row">
+                    <div class="d-box mem">WQ / DBR / CQ</div>
+                    <span class="d-arrow">↔</span>
+                    <div class="d-box cpu">CPU</div>
+                </div>
+                <div class="d-row">
+                    <div class="d-box nic">NIC Doorbell</div>
+                </div>
+            </div>
+            <div class="detail">
+                <strong>CPU proxy 模式</strong>：GPU 把数据写入 Host Memory 中的 Proxy Buffer，CPU 负责操作 WQ（Work Queue）、DBR（Doorbell Record）、CQ（Completion Queue）并触发 NIC Doorbell 发送数据。
+            </div>
+            <table class="info-table">
+                <tr><td>NVLink:</td><td><code>ncclDevKernel</code></td></tr>
+                <tr><td>RDMA:</td><td><code>ncclDevKernel</code> + CPU proxy</td></tr>
+            </table>
+            <span class="mode-tag">CPU + GPU</span>
+        </div>
+
+        <!-- Symk -->
+        <div class="mode-card symk">
+            <div class="mode-label">Symk（对称内核模式）</div>
+            <h3>纯 GPU 驱动</h3>
+            <div class="diagram">
+                <div class="d-row">
+                    <div class="d-box gpu">SM × N</div>
+                    <span class="d-arrow">→</span>
+                    <div class="d-box gpu">Data</div>
+                </div>
+                <div class="d-row">
+                    <div class="d-box gpu">WQ / DBR / CQ</div>
+                </div>
+                <div class="d-row">
+                    <div class="d-box nic">NIC Doorbell</div>
+                </div>
+            </div>
+            <div class="detail">
+                <strong>GPU only</strong>：SM 直接操作 WQ、DBR、CQ，通过 GPU 端 MMIO 触发 NIC Doorbell，完全绕过 CPU。消除 CPU proxy 的延迟和 PCIe 往返开销。<br>
+                <strong>**支持自定义内核 hook</strong>。
+            </div>
+            <table class="info-table">
+                <tr><td>NVLink:</td><td><code>ncclSymK</code></td></tr>
+                <tr><td>RDMA:</td><td><code>ncclSymK</code></td></tr>
+            </table>
+            <span class="mode-tag">GPU only</span>
+        </div>
+
+        <!-- Zero-SM / CE -->
+        <div class="mode-card zerosm">
+            <div class="mode-label">Zero CTA Policy（零 SM 模式）</div>
+            <h3>零 SM 占用</h3>
+            <div class="diagram">
+                <div class="d-row">
+                    <div class="d-box gpu" style="opacity:0.4;">SM（空闲）</div>
+                    <div class="d-box ce">CE</div>
+                </div>
+                <div class="d-row">
+                    <div class="d-box cpu">CPU</div>
+                    <span class="d-arrow">→</span>
+                    <div class="d-box mem">DBR / WQ / CQ</div>
+                </div>
+                <div class="d-row">
+                    <div class="d-box nic">NIC Doorbell</div>
+                </div>
+            </div>
+            <div class="detail">
+                <strong>不占用任何 SM</strong>：NVLink 通信由 GPU 的 <strong>CE（Copy Engine）</strong>执行（TMA 变体），RDMA 通信退回 CPU proxy 模式。SM 全部留给计算 kernel 使用。
+            </div>
+            <table class="info-table">
+                <tr><td>NVLink:</td><td>CE based（TMA flavor）</td></tr>
+                <tr><td>RDMA:</td><td>CPU proxy based</td></tr>
+            </table>
+            <span class="mode-tag">CPU only</span>
+        </div>
+    </div>
+
+    <!-- ===== 对比总结表 ===== -->
+    <div class="card">
+        <h2>三种模式对比</h2>
+        <table class="cmp-table">
+            <thead>
+                <tr>
+                    <th>维度</th>
+                    <th>Default（默认）</th>
+                    <th>Symk（对称内核）</th>
+                    <th>Zero-SM（零 SM）</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>SM 占用</strong></td>
+                    <td>需要 SM</td>
+                    <td>需要 SM</td>
+                    <td>零 SM 占用</td>
+                </tr>
+                <tr>
+                    <td><strong>CPU 参与</strong></td>
+                    <td>CPU proxy 驱动 NIC</td>
+                    <td>完全不需要 CPU</td>
+                    <td>NVLink 不需要 / RDMA 需要 CPU</td>
+                </tr>
+                <tr>
+                    <td><strong>延迟</strong></td>
+                    <td>较高（CPU↔GPU 往返）</td>
+                    <td>最低（GPU 直接操作）</td>
+                    <td>中等（CE 硬件搬运）</td>
+                </tr>
+                <tr>
+                    <td><strong>NVLink 实现</strong></td>
+                    <td><code>ncclDevKernel</code></td>
+                    <td><code>ncclSymK</code></td>
+                    <td>CE (TMA flavor)</td>
+                </tr>
+                <tr>
+                    <td><strong>RDMA 实现</strong></td>
+                    <td><code>ncclDevKernel</code></td>
+                    <td><code>ncclSymK</code></td>
+                    <td>CPU proxy</td>
+                </tr>
+                <tr>
+                    <td><strong>适用场景</strong></td>
+                    <td>通用 / 兼容性最好</td>
+                    <td>延迟敏感（推理、小消息）</td>
+                    <td>SM 资源紧张（计算密集型训练）</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- ===== 详细总结 ===== -->
+    <div class="card">
+        <h2>内容总结</h2>
+
+        <h3>一、问题背景</h3>
+        <ul>
+            <li><strong>传统 NCCL 集合通信（Default 模式）需要 CPU 和 GPU 协作</strong> — GPU SM 负责数据搬运，但跨节点 RDMA 通信时需要 CPU 作为 proxy 来操作网卡的 Work Queue 和 Doorbell，引入 PCIe 往返延迟。</li>
+            <li><strong>SM 被通信占用意味着计算吞吐下降</strong> — 在计算密集的大模型训练中，通信占用的 SM 不能用于矩阵计算，这是一个核心矛盾。</li>
+        </ul>
+
+        <h3>二、Symk 模式 — 消除 CPU 瓶颈</h3>
+        <ul>
+            <li><strong>核心思想</strong> — 让 GPU SM 直接操作网卡的 WQ / DBR / CQ，通过 GPU 端 MMIO 直接触发 NIC Doorbell，完全绕过 CPU proxy。</li>
+            <li><strong>命名由来</strong> — "Symmetric Kernel" 指所有 GPU 运行相同的对称内核，每个 rank 同时既是发送方也是接收方。</li>
+            <li><strong>优势</strong> — 消除 CPU↔GPU 的 PCIe 往返延迟，实现最低通信延迟，特别适合推理场景和小消息通信。</li>
+            <li><strong>额外能力</strong> — 支持<strong>自定义内核 hook</strong>，用户可以插入自己的通信逻辑。</li>
+        </ul>
+
+        <h3>三、Zero-SM 模式 — 释放全部 SM 给计算</h3>
+        <ul>
+            <li><strong>核心思想</strong> — 通信操作完全不占用 SM：NVLink 通信由 GPU 的 <strong>CE（Copy Engine / DMA 引擎）</strong>执行，使用 TMA（Tensor Memory Accelerator）变体；RDMA 通信退回 CPU proxy 模式。</li>
+            <li><strong>优势</strong> — SM 100% 留给计算 kernel（如 GEMM），通信和计算完全重叠，最大化计算吞吐。</li>
+            <li><strong>代价</strong> — CE 的灵活性不如 SM（不能做复杂的 reduce 操作），且 RDMA 路径仍需 CPU 参与，所以延迟不是最优。</li>
+            <li><strong>适用场景</strong> — SM 资源极度紧张的大模型训练，通信延迟可以被计算时间掩盖的场景。</li>
+        </ul>
+
+        <h3>四、CPU 准备阶段的决策逻辑</h3>
+        <ul>
+            <li><strong>模式选择</strong> — CPU 端在入队时决定使用 regular / symk / ce 三种模式之一，通常由环境变量或 NCCL 内部启发式算法自动选择。</li>
+            <li><strong>参数选择</strong> — 确定算法（algo：如 Ring / Tree / NVLS）、协议（protocol：如 Simple / LL / LL128）、块数（nBlocks）等执行参数。</li>
+        </ul>
+    </div>
+
+    <div class="tldr">
+        三种模式解决不同瓶颈：Default 最通用但有 CPU 延迟，<br>
+        Symk 绕过 CPU 实现最低延迟，Zero-SM 把全部 SM 还给计算 — 各取所需。
+    </div>
+
+</div>
+</body>
+</html>

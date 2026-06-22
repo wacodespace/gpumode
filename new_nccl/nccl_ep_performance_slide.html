@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>性能对比 — NCCL-EP Expert Major 输出</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+            background: #f5f5f5;
+            color: #333;
+            line-height: 1.6;
+            padding: 40px 20px;
+        }
+
+        .slide-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: #fff;
+            border-radius: 16px;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+            padding: 48px 56px;
+        }
+
+        .slide-title {
+            text-align: center;
+            margin-bottom: 12px;
+        }
+
+        .slide-title h1 {
+            font-size: 30px;
+            font-weight: 700;
+            color: #1a1a1a;
+        }
+
+        .slide-title .subtitle {
+            font-size: 17px;
+            color: #6aab2e;
+            margin-top: 4px;
+        }
+
+        .config-line {
+            text-align: center;
+            font-size: 14px;
+            font-weight: 600;
+            color: #444;
+            margin: 16px 0 32px;
+        }
+
+        .config-line span {
+            margin: 0 4px;
+            color: #888;
+        }
+
+        /* 图例 */
+        .legend {
+            display: flex;
+            justify-content: center;
+            gap: 32px;
+            margin-bottom: 32px;
+            flex-wrap: wrap;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            color: #555;
+        }
+
+        .legend-color {
+            width: 16px;
+            height: 16px;
+            border-radius: 3px;
+        }
+
+        .legend-color.red   { background: #d32f2f; }
+        .legend-color.blue  { background: #1976d2; }
+        .legend-color.green { background: #6aab2e; }
+
+        /* 三栏图表区 */
+        .charts {
+            display: flex;
+            gap: 24px;
+            margin-bottom: 8px;
+        }
+
+        .chart-panel {
+            flex: 1;
+            border: 1px solid #e8e8e8;
+            border-radius: 10px;
+            padding: 20px 16px 16px;
+        }
+
+        .chart-panel h3 {
+            text-align: center;
+            font-size: 16px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 16px;
+        }
+
+        .chart-panel .y-label {
+            font-size: 11px;
+            color: #999;
+            text-align: center;
+            margin-bottom: 12px;
+        }
+
+        /* 柱状图组 */
+        .bar-groups {
+            display: flex;
+            justify-content: space-around;
+            align-items: flex-end;
+            height: 200px;
+            padding: 0 4px;
+            border-bottom: 1px solid #ddd;
+            border-left: 1px solid #ddd;
+            position: relative;
+        }
+
+        .bar-group {
+            display: flex;
+            align-items: flex-end;
+            gap: 3px;
+            text-align: center;
+        }
+
+        .bar-wrapper {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .bar {
+            width: 22px;
+            border-radius: 3px 3px 0 0;
+            position: relative;
+        }
+
+        .bar.red   { background: #d32f2f; }
+        .bar.blue  { background: #1976d2; }
+        .bar.green { background: #6aab2e; }
+
+        .bar-value {
+            font-size: 10px;
+            font-weight: 600;
+            margin-bottom: 2px;
+        }
+
+        .bar-value.red   { color: #d32f2f; }
+        .bar-value.blue  { color: #1976d2; }
+        .bar-value.green { color: #6aab2e; }
+
+        .group-label {
+            font-size: 12px;
+            color: #666;
+            margin-top: 6px;
+            text-align: center;
+            width: 100%;
+        }
+
+        .x-label {
+            font-size: 12px;
+            color: #999;
+            text-align: center;
+            margin-top: 8px;
+        }
+
+        /* 数据表格 */
+        .data-table-section {
+            margin-top: 28px;
+        }
+
+        .data-table-section h3 {
+            font-size: 15px;
+            font-weight: 600;
+            color: #555;
+            margin-bottom: 10px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        th, td {
+            padding: 8px 12px;
+            text-align: center;
+            border: 1px solid #e8e8e8;
+        }
+
+        th {
+            background: #fafafa;
+            font-weight: 600;
+            color: #444;
+        }
+
+        td.best {
+            font-weight: 700;
+            color: #6aab2e;
+        }
+
+        .table-section-header {
+            background: #f5f5f5;
+            font-weight: 600;
+            color: #333;
+        }
+
+        /* 总结 */
+        .summary-section {
+            margin-top: 44px;
+            border-top: 2px solid #6aab2e;
+            padding-top: 28px;
+        }
+
+        .summary-section h2 {
+            font-size: 22px;
+            color: #333;
+            margin-bottom: 16px;
+        }
+
+        .summary-section > ul {
+            list-style: none;
+            padding: 0;
+        }
+
+        .summary-section > ul > li {
+            position: relative;
+            padding: 8px 0 8px 20px;
+            font-size: 15px;
+            color: #444;
+            line-height: 1.75;
+        }
+
+        .summary-section > ul > li::before {
+            content: "•";
+            position: absolute;
+            left: 0;
+            color: #6aab2e;
+            font-weight: 700;
+        }
+
+        .summary-section li strong {
+            color: #222;
+        }
+
+        .summary-section li code {
+            background: #f0f0f0;
+            padding: 1px 5px;
+            border-radius: 3px;
+            font-size: 13px;
+        }
+
+        .sub-list {
+            list-style: none;
+            padding-left: 20px;
+            margin-top: 6px;
+        }
+
+        .sub-list li {
+            position: relative;
+            padding: 3px 0 3px 16px;
+            font-size: 14px;
+            color: #555;
+        }
+
+        .sub-list li::before {
+            content: "–";
+            position: absolute;
+            left: 0;
+            color: #999;
+        }
+    </style>
+</head>
+<body>
+
+<div class="slide-container">
+
+    <!-- 标题 -->
+    <div class="slide-title">
+        <h1>性能对比</h1>
+        <div class="subtitle">NCCL-EP 用于 Expert Major 输出</div>
+    </div>
+
+    <div class="config-line">
+        多节点 NVLink 32 GPU <span>·</span> GB300 <span>·</span> Expert-Major <span>·</span>
+        experts=256 <span>·</span> top-K=8 <span>·</span> tokens=4096 <span>·</span> hidden=7168 <span>·</span> BF16
+    </div>
+
+    <!-- 图例 -->
+    <div class="legend">
+        <div class="legend-item">
+            <div class="legend-color red"></div>
+            HybridEP（融合 dispatch+permute / combine+unpermute）
+        </div>
+        <div class="legend-item">
+            <div class="legend-color blue"></div>
+            DeepEP-v2（kernel + epilogue / permute / reduce）
+        </div>
+        <div class="legend-item">
+            <div class="legend-color green"></div>
+            NCCL EP
+        </div>
+    </div>
+
+    <!-- 完整数据表格 -->
+    <div class="data-table-section">
+        <h3>延迟数据（单位：&mu;s，越低越好）</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th rowspan="2">阶段</th>
+                    <th colspan="3">sm8</th>
+                    <th colspan="3">sm16</th>
+                    <th colspan="3">sm32</th>
+                </tr>
+                <tr>
+                    <th>HybridEP</th><th>DeepEP-v2</th><th>NCCL EP</th>
+                    <th>HybridEP</th><th>DeepEP-v2</th><th>NCCL EP</th>
+                    <th>HybridEP</th><th>DeepEP-v2</th><th>NCCL EP</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr class="table-section-header">
+                    <td colspan="10">Dispatch（分发阶段）</td>
+                </tr>
+                <tr>
+                    <td>Dispatch</td>
+                    <td>3006</td><td>1997</td><td class="best">1192</td>
+                    <td>1773</td><td>1392</td><td class="best">1026</td>
+                    <td>1362</td><td>923</td><td class="best">902</td>
+                </tr>
+                <tr class="table-section-header">
+                    <td colspan="10">Combine（合并阶段）</td>
+                </tr>
+                <tr>
+                    <td>Combine</td>
+                    <td>3766</td><td>2139</td><td class="best">1631</td>
+                    <td>2063</td><td>1306</td><td class="best">1054</td>
+                    <td>1389</td><td>924</td><td class="best">1053</td>
+                </tr>
+                <tr class="table-section-header">
+                    <td colspan="10">Dispatch + Combine（总延迟）</td>
+                </tr>
+                <tr>
+                    <td>总计</td>
+                    <td>6772</td><td>4136</td><td class="best">2834</td>
+                    <td>3836</td><td>2698</td><td class="best">2090</td>
+                    <td>2751</td><td>1847</td><td class="best">1965</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- 总结 -->
+    <div class="summary-section">
+        <h2>内容总结</h2>
+        <ul>
+            <li><strong>测试环境：</strong>GB300 平台，32 GPU 通过多节点 NVLink 互连，使用 Expert-Major 数据布局，256 个 experts，top-K=8，4096 tokens，hidden size 7168，BF16 精度。</li>
+            <li><strong>对比方案：</strong>
+                <ul class="sub-list">
+                    <li><strong>HybridEP</strong> — 将 dispatch+permute 以及 combine+unpermute 融合在一起的方案，延迟最高。</li>
+                    <li><strong>DeepEP-v2</strong> — 将 kernel、epilogue、permute、reduce 分开执行的方案，延迟居中。</li>
+                    <li><strong>NCCL EP</strong> — NCCL 原生的 Expert Parallelism 实现，在绝大多数场景下延迟最低。</li>
+                </ul>
+            </li>
+            <li><strong>NCCL EP 在 sm8 场景优势最大：</strong>Dispatch+Combine 总延迟为 2834 &mu;s，比 HybridEP（6772 &mu;s）低 <strong>58%</strong>，比 DeepEP-v2（4136 &mu;s）低 <strong>31%</strong>。SM 越少，NCCL EP 的"零 SM"优势越明显。</li>
+            <li><strong>随着 SM 数量增加（sm16 → sm32），三者差距缩小：</strong>在 sm32 时 DeepEP-v2 的 Combine 阶段（924 &mu;s）略优于 NCCL EP（1053 &mu;s），但总延迟 NCCL EP（1965 &mu;s）仍与 DeepEP-v2（1847 &mu;s）非常接近。</li>
+            <li><strong>核心结论：</strong>NCCL EP 在 SM 资源受限（sm8/sm16）的实际生产场景中表现最优——这正是 MoE 训练的典型场景，因为大部分 SM 被计算内核占用，留给通信的 SM 很少。NCCL EP 通过计算-通信融合实现的"Zero SM"效果在此类场景下带来显著的端到端延迟优势。</li>
+        </ul>
+    </div>
+
+</div>
+
+</body>
+</html>

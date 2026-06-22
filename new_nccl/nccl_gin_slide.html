@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GIN: GPU 发起的内核内网络通信</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+            background: #f5f5f5;
+            color: #333;
+            line-height: 1.6;
+            padding: 40px 20px;
+        }
+
+        .slide-container {
+            max-width: 1100px;
+            margin: 0 auto;
+            background: #fff;
+            border-radius: 16px;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+            padding: 48px 56px;
+        }
+
+        /* 顶部标签 */
+        .tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            color: #6aab2e;
+            margin-bottom: 12px;
+        }
+
+        .tag .dot {
+            width: 10px;
+            height: 10px;
+            background: #6aab2e;
+            border-radius: 50%;
+        }
+
+        /* 标题 */
+        .slide-title h1 {
+            font-size: 30px;
+            font-weight: 700;
+            color: #1a1a1a;
+            margin-bottom: 12px;
+        }
+
+        .slide-title .desc {
+            font-size: 16px;
+            color: #666;
+            margin-bottom: 36px;
+        }
+
+        /* 控制路径图 */
+        .control-path-box {
+            border: 1px solid #e0e0e0;
+            border-radius: 12px;
+            padding: 32px 36px 28px;
+            margin-bottom: 32px;
+            position: relative;
+        }
+
+        .control-path-box .box-label {
+            font-size: 14px;
+            font-weight: 600;
+            color: #555;
+            margin-bottom: 20px;
+        }
+
+        .control-path-box .host-setup {
+            font-size: 13px;
+            color: #999;
+            margin-top: 20px;
+        }
+
+        /* 流程图 */
+        .flow {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .flow-node {
+            border-radius: 8px;
+            padding: 16px 20px;
+            text-align: center;
+            min-width: 120px;
+        }
+
+        .flow-node.gray {
+            background: #f0f0f0;
+            border: 1px solid #ddd;
+        }
+
+        .flow-node.green-light {
+            background: #f0f8e8;
+            border: 1px solid #c5e1a5;
+        }
+
+        .flow-node.cyan {
+            background: #e6f7fa;
+            border: 1px solid #b2ebf2;
+        }
+
+        .flow-node .node-title {
+            font-size: 16px;
+            font-weight: 700;
+        }
+
+        .flow-node .node-sub {
+            font-size: 12px;
+            color: #777;
+            margin-top: 4px;
+        }
+
+        .flow-arrow {
+            font-size: 28px;
+            flex-shrink: 0;
+        }
+
+        .flow-arrow.olive { color: #8b9a2e; }
+        .flow-arrow.amber { color: #c8932e; }
+        .flow-arrow.sky   { color: #5bc0de; }
+        .flow-arrow.teal  { color: #26a69a; }
+
+        /* 中间分支区 */
+        .branch-area {
+            display: flex;
+            align-items: stretch;
+            gap: 16px;
+        }
+
+        .branch-left {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .branch-right {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .branch-backends {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .backend-card {
+            border-radius: 8px;
+            padding: 14px 24px;
+            text-align: center;
+            min-width: 150px;
+        }
+
+        .backend-card.green-bg {
+            background: #f0f8e8;
+            border: 1px solid #c5e1a5;
+        }
+
+        .backend-card.amber-bg {
+            background: #fff8e1;
+            border: 1px solid #ffe082;
+        }
+
+        .backend-card.blue-bg {
+            background: #e3f2fd;
+            border: 1px solid #90caf9;
+        }
+
+        .backend-card .card-title {
+            font-size: 16px;
+            font-weight: 700;
+        }
+
+        .backend-card.green-bg .card-title { color: #6aab2e; }
+        .backend-card.amber-bg .card-title { color: #c88a2e; }
+        .backend-card.blue-bg .card-title  { color: #1976d2; }
+
+        .backend-card .card-sub {
+            font-size: 12px;
+            color: #777;
+            margin-top: 2px;
+        }
+
+        /* 完整流程行 */
+        .full-flow {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-top: 8px;
+        }
+
+        /* 底部信息栏 */
+        .info-bar {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 12px;
+        }
+
+        .info-item {
+            flex: 1;
+            background: #fafafa;
+            border-radius: 8px;
+            padding: 16px 20px;
+            border-left: 4px solid;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .info-item.green  { border-color: #6aab2e; }
+        .info-item.teal   { border-color: #26a69a; }
+        .info-item.amber  { border-color: #c88a2e; }
+
+        .info-item .info-label {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 4px;
+        }
+
+        .info-item.green  .info-label { color: #6aab2e; }
+        .info-item.teal   .info-label { color: #26a69a; }
+        .info-item.amber  .info-label { color: #c88a2e; }
+
+        .info-item .info-value {
+            font-size: 15px;
+            font-weight: 600;
+            color: #222;
+        }
+
+        .source-line {
+            font-size: 12px;
+            color: #aaa;
+            margin-top: 8px;
+        }
+
+        /* 总结 */
+        .summary-section {
+            margin-top: 44px;
+            border-top: 2px solid #6aab2e;
+            padding-top: 28px;
+        }
+
+        .summary-section h2 {
+            font-size: 22px;
+            color: #333;
+            margin-bottom: 16px;
+        }
+
+        .summary-section > ul {
+            list-style: none;
+            padding: 0;
+        }
+
+        .summary-section > ul > li {
+            position: relative;
+            padding: 8px 0 8px 20px;
+            font-size: 15px;
+            color: #444;
+            line-height: 1.75;
+        }
+
+        .summary-section > ul > li::before {
+            content: "•";
+            position: absolute;
+            left: 0;
+            color: #6aab2e;
+            font-weight: 700;
+        }
+
+        .summary-section li strong {
+            color: #222;
+        }
+
+        .summary-section li code {
+            background: #f0f0f0;
+            padding: 1px 5px;
+            border-radius: 3px;
+            font-size: 13px;
+        }
+
+        .sub-list {
+            list-style: none;
+            padding-left: 20px;
+            margin-top: 6px;
+        }
+
+        .sub-list li {
+            position: relative;
+            padding: 3px 0 3px 16px;
+            font-size: 14px;
+            color: #555;
+        }
+
+        .sub-list li::before {
+            content: "–";
+            position: absolute;
+            left: 0;
+            color: #999;
+        }
+    </style>
+</head>
+<body>
+
+<div class="slide-container">
+
+    <!-- 标签 & 标题 -->
+    <div class="tag"><span class="dot"></span> NCCL GIN</div>
+    <div class="slide-title">
+        <h1>GIN：GPU 发起的内核内网络通信</h1>
+        <p class="desc">CUDA 内核直接发起网络操作；NCCL 负责初始化、内存窗口管理和后端选择。</p>
+    </div>
+
+    <!-- 控制路径图 -->
+    <div class="control-path-box">
+        <div class="box-label">控制路径</div>
+
+        <div class="full-flow">
+            <!-- CUDA kernel -->
+            <div class="flow-node gray">
+                <div class="node-title">CUDA 内核</div>
+                <div class="node-sub">put / signal</div>
+            </div>
+
+            <div class="flow-arrow olive">&#10145;</div>
+
+            <!-- NCCL GIN API -->
+            <div class="flow-node green-light">
+                <div class="node-title">NCCL GIN API</div>
+                <div class="node-sub"><code>ncclGin::put</code></div>
+            </div>
+
+            <div class="flow-arrow olive">&#10145;</div>
+
+            <!-- 三种后端 -->
+            <div class="branch-backends">
+                <div class="backend-card green-bg">
+                    <div class="card-title">GDAKI</div>
+                    <div class="card-sub">GPU → NIC</div>
+                </div>
+                <div class="backend-card amber-bg">
+                    <div class="card-title">Proxy</div>
+                    <div class="card-sub">GPU → CPU 队列</div>
+                </div>
+                <div class="backend-card blue-bg">
+                    <div class="card-title">GPI</div>
+                    <div class="card-sub">GPU → NIC → DPA</div>
+                </div>
+            </div>
+
+            <div class="flow-arrow teal">&#10145;</div>
+
+            <!-- NIC -->
+            <div class="flow-node cyan">
+                <div class="node-title">NIC</div>
+                <div class="node-sub">IB / RoCE</div>
+            </div>
+
+            <div class="flow-arrow teal">&#10145;</div>
+
+            <!-- Remote GPU -->
+            <div class="flow-node cyan">
+                <div class="node-title">远程 GPU</div>
+                <div class="node-sub">内存窗口</div>
+            </div>
+        </div>
+
+        <p class="host-setup">主机端初始化：communicator + 已注册的内存窗口</p>
+    </div>
+
+    <!-- 底部信息栏 -->
+    <div class="info-bar">
+        <div class="info-item green">
+            <span class="info-label">可用版本</span>
+            <span class="info-value">NCCL 2.28.7+</span>
+        </div>
+        <div class="info-item teal">
+            <span class="info-label">环境要求</span>
+            <span class="info-value">CUDA 12.2+ / GIN context</span>
+        </div>
+        <div class="info-item amber">
+            <span class="info-label">最佳场景</span>
+            <span class="info-value">MoE + 融合内核</span>
+        </div>
+    </div>
+
+    <p class="source-line">来源：NVIDIA NCCL 文档 及 Hamidouche et al., arXiv:2511.15076v2.</p>
+
+    <!-- 总结 -->
+    <div class="summary-section">
+        <h2>内容总结</h2>
+        <ul>
+            <li><strong>GIN（GPU-Initiated Networking）</strong>允许 CUDA 内核中的线程直接发起网络通信（如 <code>put</code> / <code>signal</code>），无需返回主机端触发，从而消除 CPU 调度延迟。</li>
+            <li><strong>统一入口：</strong>内核通过 <code>ncclGin::put</code> 等 NCCL GIN API 发起操作，NCCL 在底层自动选择最优后端：
+                <ul class="sub-list">
+                    <li><strong>GDAKI</strong> — GPU 直接访问网卡（GPU Direct Async Kernel Initiated），绕过 CPU，延迟最低。</li>
+                    <li><strong>Proxy</strong> — GPU 将请求写入 CPU 队列，由 CPU 代理线程提交到 NIC；兼容性最广。</li>
+                    <li><strong>GPI</strong> — GPU 经 NIC 将工作卸载到 DPA（Data Path Accelerator，网卡上的可编程处理器），由 DPA 代替 CPU 执行网络操作。</li>
+                </ul>
+            </li>
+            <li><strong>数据最终通过 NIC（IB / RoCE）发送到远程 GPU 的内存窗口（Window）</strong>，完成 RDMA 写入。</li>
+            <li><strong>主机端仅负责一次性初始化：</strong>创建 communicator 并注册内存窗口，之后所有通信均在内核内完成。</li>
+            <li><strong>版本与环境要求：</strong>需要 NCCL 2.28.7 及以上版本，CUDA 12.2+ 以及 GIN context 支持。</li>
+            <li><strong>最佳应用场景：</strong>MoE（Mixture of Experts）和融合内核——这类场景中通信与计算交织，在内核内直接发起网络操作可以实现极细粒度的计算-通信重叠，避免同步屏障带来的空闲等待。</li>
+        </ul>
+    </div>
+
+</div>
+
+</body>
+</html>

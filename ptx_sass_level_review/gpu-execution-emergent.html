@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>现代 GPU 执行是涌现的</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: #fafafa;
+  color: #1a1a1a;
+  padding: 3rem 2rem;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+.label {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 0.25rem 0.6rem;
+  border: 1px solid #ccc;
+  margin-bottom: 1rem;
+}
+h1 {
+  font-size: 2.2rem;
+  font-weight: 800;
+  margin-bottom: 0.5rem;
+}
+.subtitle {
+  font-size: 1rem;
+  color: #444;
+  line-height: 1.6;
+  margin-bottom: 2.5rem;
+  max-width: 900px;
+}
+.surfaces {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+  margin-bottom: 2.5rem;
+}
+.surface {
+  border: 1px solid #e0e0e0;
+  border-top: 3px solid;
+  padding: 2rem;
+  background: #fff;
+}
+.surface--algo { border-top-color: #333; }
+.surface--compiler { border-top-color: #b8860b; }
+.surface h2 {
+  font-size: 1.4rem;
+  margin-bottom: 0.75rem;
+}
+.surface p {
+  font-size: 0.9rem;
+  color: #555;
+  line-height: 1.6;
+  margin-bottom: 1.5rem;
+}
+.code-block {
+  background: #f5f5f0;
+  border: 1px solid #e8e8e3;
+  padding: 1.2rem 1.5rem;
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 0.82rem;
+  line-height: 1.7;
+  margin-bottom: 1.5rem;
+  overflow-x: auto;
+}
+.code-block .comment { color: #888; }
+.code-block .fn { color: #c0392b; }
+.code-block .kw { color: #2980b9; }
+.meta-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 0.75rem;
+}
+.meta-item {
+  border: 1px solid #e0e0e0;
+  padding: 0.6rem 0.8rem;
+}
+.meta-item .meta-label {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #888;
+  margin-bottom: 0.25rem;
+}
+.meta-item .meta-value {
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+.takeaway {
+  background: #f9f9f6;
+  border: 1px solid #e0e0e0;
+  border-left: 4px solid #333;
+  padding: 1.2rem 1.5rem;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  color: #333;
+}
+.arrow-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem 0;
+}
+.arrow-diagram {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  font-size: 0.85rem;
+  color: #555;
+}
+.arrow-diagram .node {
+  background: #fff;
+  border: 1px solid #ccc;
+  padding: 0.4rem 0.8rem;
+  border-radius: 4px;
+  font-weight: 500;
+}
+.arrow-diagram .plus {
+  font-size: 1.2rem;
+  color: #999;
+}
+.arrow-diagram .equals {
+  font-size: 1.2rem;
+  color: #999;
+}
+.arrow-diagram .result {
+  background: #333;
+  color: #fff;
+  padding: 0.4rem 0.8rem;
+  border-radius: 4px;
+  font-weight: 600;
+}
+@media (max-width: 768px) {
+  .surfaces { grid-template-columns: 1fr; }
+  .arrow-diagram { flex-wrap: wrap; justify-content: center; }
+}
+</style>
+</head>
+<body>
+
+<div class="label">核心框架</div>
+<h1>现代 GPU 执行是涌现的</h1>
+<p class="subtitle">
+  算法与编译器是两个独立的错误面；最终执行路径由源码、编译器、运行时形状、自动调优器和目标架构共同决定。
+</p>
+
+<div class="arrow-container">
+  <div class="arrow-diagram">
+    <span class="node">源码（意图）</span>
+    <span class="plus">+</span>
+    <span class="node">编译器（物化）</span>
+    <span class="plus">+</span>
+    <span class="node">运行时形状</span>
+    <span class="plus">+</span>
+    <span class="node">架构</span>
+    <span class="equals">=</span>
+    <span class="result">涌现式执行</span>
+  </div>
+</div>
+
+<div class="surfaces">
+  <div class="surface surface--algo">
+    <div class="label">算法面</div>
+    <h2>开发者控制意图</h2>
+    <p>Tiling 策略、attention 模式、访存顺序、reduction 形状、masking 及数值选择均在源码中定义。此面在编译前可见、可审查。</p>
+    <div class="code-block">
+      <span class="comment"># 源码级意图</span><br>
+      q = <span class="fn">tl.load</span>(Q_block, mask=q_mask)<br>
+      k = <span class="fn">tl.load</span>(K_block, mask=k_mask)<br>
+      acc = <span class="fn">tl.dot</span>(q, k)<br>
+      <span class="fn">tl.store</span>(Out, acc, mask=out_mask)
+    </div>
+    <div class="meta-row">
+      <div class="meta-item">
+        <div class="meta-label">可见性</div>
+        <div class="meta-value">源码可见</div>
+      </div>
+      <div class="meta-item">
+        <div class="meta-label">审查者</div>
+        <div class="meta-value">kernel 作者</div>
+      </div>
+      <div class="meta-item">
+        <div class="meta-label">核心问题</div>
+        <div class="meta-value">算法对不对？</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="surface surface--compiler">
+    <div class="label">编译器面</div>
+    <h2>编译器控制物化</h2>
+    <p>寄存器分配、指令选择、tensor-core 路径、向量宽度、local memory 流量及同步插入，只在 lowering 之后才出现。</p>
+    <div class="code-block">
+      <span class="comment">// 编译器生成的结构</span><br>
+      <span class="kw">mma.sync.aligned.m16n8k16</span> ...<br>
+      <span class="fn">st.local.u64</span> [%rd2], %rd88;<br>
+      <span class="fn">ld.local.u64</span> %rd120, [%rd2];<br>
+      <span class="kw">bar.sync</span> 0;
+    </div>
+    <div class="meta-row">
+      <div class="meta-item">
+        <div class="meta-label">可见性</div>
+        <div class="meta-value">编译后才可见</div>
+      </div>
+      <div class="meta-item">
+        <div class="meta-label">审查者</div>
+        <div class="meta-value">PTX/SASS</div>
+      </div>
+      <div class="meta-item">
+        <div class="meta-label">核心问题</div>
+        <div class="meta-value">实际走了哪条路径？</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="takeaway">
+  <strong>核心洞察：</strong>同一源码级操作在不同架构、编译器版本和 DSL 后端上可能产生完全不同的执行结构。正确性和性能 bug 可以独立地源自任一面。
+</div>
+
+</body>
+</html>

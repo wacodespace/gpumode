@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CuTe DSL 对 NCCL 的支持 — 实现计算与通信融合</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+            background: #f5f5f5;
+            color: #333;
+            line-height: 1.6;
+            padding: 40px 20px;
+        }
+
+        .slide-container {
+            max-width: 1100px;
+            margin: 0 auto;
+            background: #fff;
+            border-radius: 16px;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+            padding: 48px 56px;
+        }
+
+        /* 标题 */
+        .slide-title {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .slide-title h1 {
+            font-size: 30px;
+            font-weight: 700;
+            color: #1a1a1a;
+        }
+
+        .slide-title .subtitle {
+            font-size: 17px;
+            color: #6aab2e;
+            margin-top: 4px;
+        }
+
+        /* 主体布局 */
+        .main-layout {
+            display: flex;
+            gap: 40px;
+            align-items: flex-start;
+        }
+
+        /* 左侧要点 */
+        .key-points {
+            flex: 0 0 220px;
+            display: flex;
+            flex-direction: column;
+            gap: 28px;
+            padding-top: 80px;
+        }
+
+        .key-point h3 {
+            font-size: 16px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 4px;
+        }
+
+        .key-point p {
+            font-size: 14px;
+            color: #777;
+            padding-left: 14px;
+            position: relative;
+        }
+
+        .key-point p::before {
+            content: "•";
+            position: absolute;
+            left: 0;
+            color: #999;
+        }
+
+        /* 右侧代码 */
+        .code-section {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .code-block {
+            background: #fafafa;
+            border: 1px solid #e8e8e8;
+            border-radius: 10px;
+            padding: 24px 28px;
+            font-family: "SF Mono", "Fira Code", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
+            font-size: 14px;
+            line-height: 1.8;
+            overflow-x: auto;
+            white-space: pre;
+        }
+
+        .code-block .kw      { color: #1565c0; font-weight: 600; }
+        .code-block .fn      { color: #6a1b9a; }
+        .code-block .decorator { color: #6aab2e; font-weight: 600; }
+        .code-block .str     { color: #c62828; }
+        .code-block .comment { color: #6aab2e; font-style: italic; }
+        .code-block .param   { color: #333; }
+        .code-block .highlight { color: #e65100; font-weight: 700; }
+        .code-block .bold    { font-weight: 700; }
+
+        /* 总结 */
+        .summary-section {
+            margin-top: 44px;
+            border-top: 2px solid #6aab2e;
+            padding-top: 28px;
+        }
+
+        .summary-section h2 {
+            font-size: 22px;
+            color: #333;
+            margin-bottom: 16px;
+        }
+
+        .summary-section > ul {
+            list-style: none;
+            padding: 0;
+        }
+
+        .summary-section > ul > li {
+            position: relative;
+            padding: 8px 0 8px 20px;
+            font-size: 15px;
+            color: #444;
+            line-height: 1.75;
+        }
+
+        .summary-section > ul > li::before {
+            content: "•";
+            position: absolute;
+            left: 0;
+            color: #6aab2e;
+            font-weight: 700;
+        }
+
+        .summary-section li strong {
+            color: #222;
+        }
+
+        .summary-section li code {
+            background: #f0f0f0;
+            padding: 1px 5px;
+            border-radius: 3px;
+            font-size: 13px;
+        }
+
+        .sub-list {
+            list-style: none;
+            padding-left: 20px;
+            margin-top: 6px;
+        }
+
+        .sub-list li {
+            position: relative;
+            padding: 3px 0 3px 16px;
+            font-size: 14px;
+            color: #555;
+        }
+
+        .sub-list li::before {
+            content: "–";
+            position: absolute;
+            left: 0;
+            color: #999;
+        }
+    </style>
+</head>
+<body>
+
+<div class="slide-container">
+
+    <!-- 标题 -->
+    <div class="slide-title">
+        <h1>CuTe DSL 对 NCCL 的支持</h1>
+        <div class="subtitle">实现计算与通信融合</div>
+    </div>
+
+    <!-- 主体 -->
+    <div class="main-layout">
+
+        <!-- 左侧要点 -->
+        <div class="key-points">
+            <div class="key-point">
+                <h3>计算/通信合一内核</h3>
+                <p>实现 "Zero SM" 效果</p>
+            </div>
+            <div class="key-point">
+                <h3>Python 层级</h3>
+                <p>CuTe DSL</p>
+            </div>
+            <div class="key-point">
+                <h3>自动 JIT 优化</h3>
+            </div>
+        </div>
+
+        <!-- 右侧代码 -->
+        <div class="code-section">
+            <div class="code-block"><span class="kw">import</span> cutlass.cute <span class="kw">as</span> cute
+<span class="kw">from</span> nccl.core.device.cute <span class="kw">import</span> core, gin, coop
+
+<span class="decorator">@cute.kernel</span>
+<span class="kw">def</span> <span class="fn">ring_exchange</span>(dev_comm, window, my_rank):
+    team = core.team_world(dev_comm)
+    <span class="bold">gin_ctx</span> = gin.init(dev_comm, gin.GinBackendMask.ALL, <span class="highlight">blockIdx</span>)
+    coop_ctx = coop.init_cta()
+    peer = (my_rank + 1) % dev_comm.nRanks
+
+    <span class="bold">gin.put</span>(gin_ctx, coop_ctx, team, peer, window, offset,
+           signal_id=0, signal_op=0, ...)
+    <span class="bold">gin.wait_signal</span>(gin_ctx, coop_ctx, signal=0, least=1)
+        <span class="comment"># Compute</span>
+        ...
+
+    <span class="bold">gin.flush</span></div>
+        </div>
+
+    </div>
+
+    <!-- 总结 -->
+    <div class="summary-section">
+        <h2>内容总结</h2>
+        <ul>
+            <li><strong>CuTe DSL 是 CUTLASS 提供的 Python 领域专用语言</strong>，现已支持 NCCL Device API，允许开发者在 Python 层级编写将计算与通信融合在同一个 GPU 内核中的代码。</li>
+            <li><strong>核心优势 —— "Zero SM"：</strong>通信不再需要占用专门的 SM（流多处理器）来运行独立的通信内核。计算和通信在同一个内核里交替进行，所有 SM 都参与计算，通信开销被"隐藏"在计算间隙中，实现了等效的零 SM 通信开销。</li>
+            <li><strong>代码示例解读（ring_exchange）：</strong>
+                <ul class="sub-list">
+                    <li><code>core.team_world(dev_comm)</code> — 获取包含所有 rank 的 team</li>
+                    <li><code>gin.init(..., blockIdx)</code> — 以当前 block 为粒度初始化 GIN 上下文，启用所有可用后端</li>
+                    <li><code>coop.init_cta()</code> — 初始化 CTA（线程块）级协作上下文</li>
+                    <li><code>gin.put(...)</code> — 向相邻 rank 发起 RDMA put 写入，并附带 signal 通知</li>
+                    <li><code>gin.wait_signal(...)</code> — 等待来自对端的 signal，确认数据已到达后再继续计算</li>
+                    <li><code>gin.flush</code> — 刷新所有待处理的网络操作，确保完成</li>
+                </ul>
+            </li>
+            <li><strong>自动 JIT 优化：</strong>CuTe DSL 编写的内核通过 JIT 编译自动优化为高效的 CUDA 代码，开发者无需手写 CUDA C++，即可获得接近手工优化的性能。</li>
+            <li><strong>实际意义：</strong>大幅降低了编写计算-通信重叠内核的门槛——以往需要数百行 CUDA C++ 实现的融合内核（如 MoE 中的 all-to-all + 计算），现在只需几十行 Python 即可完成，同时保持高性能。</li>
+        </ul>
+    </div>
+
+</div>
+
+</body>
+</html>

@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NCCL Inspector — 作业内实时常驻可观测性</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+            background: #f5f5f5;
+            color: #333;
+            line-height: 1.6;
+            padding: 40px 20px;
+        }
+
+        .slide-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: #fff;
+            border-radius: 16px;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+            padding: 48px 56px;
+        }
+
+        .slide-title {
+            text-align: center;
+            margin-bottom: 36px;
+        }
+
+        .slide-title h1 {
+            font-size: 30px;
+            font-weight: 700;
+            color: #1a1a1a;
+        }
+
+        .slide-title .subtitle {
+            font-size: 17px;
+            color: #6aab2e;
+            margin-top: 4px;
+        }
+
+        /* 主体布局 */
+        .main-layout {
+            display: flex;
+            gap: 40px;
+            align-items: flex-start;
+        }
+
+        /* 左侧文字 */
+        .text-side {
+            flex: 1;
+        }
+
+        .section-heading {
+            font-size: 16px;
+            font-weight: 700;
+            margin: 20px 0 10px;
+        }
+
+        .section-heading:first-child {
+            margin-top: 0;
+        }
+
+        .section-heading.why    { color: #6aab2e; }
+        .section-heading.what   { color: #6aab2e; }
+        .section-heading.how    { color: #6aab2e; }
+        .section-heading.roadmap { color: #6aab2e; }
+
+        .content-list {
+            list-style: none;
+            padding: 0;
+        }
+
+        .content-list > li {
+            position: relative;
+            padding: 4px 0 4px 16px;
+            font-size: 14px;
+            color: #444;
+            line-height: 1.7;
+        }
+
+        .content-list > li::before {
+            content: "·";
+            position: absolute;
+            left: 0;
+            color: #999;
+            font-size: 20px;
+            line-height: 1.3;
+        }
+
+        .content-list li strong {
+            color: #222;
+        }
+
+        .content-list .sub-item {
+            padding-left: 28px;
+            font-size: 13px;
+            color: #666;
+        }
+
+        .content-list .sub-item::before {
+            content: "·";
+            left: 14px;
+        }
+
+        .roadmap-tag {
+            display: inline-block;
+            background: #fff3e0;
+            color: #e8820e;
+            font-size: 11px;
+            font-weight: 600;
+            padding: 2px 8px;
+            border-radius: 3px;
+            margin-left: 4px;
+        }
+
+        /* 右侧图表 */
+        .chart-side {
+            flex: 1;
+            border: 1px solid #e8e8e8;
+            border-radius: 10px;
+            padding: 24px;
+        }
+
+        .chart-title {
+            font-size: 15px;
+            font-weight: 700;
+            color: #333;
+            margin-bottom: 16px;
+        }
+
+        .chart-area {
+            position: relative;
+            height: 240px;
+            border-left: 1px solid #ddd;
+            border-bottom: 1px solid #ddd;
+            margin-bottom: 8px;
+        }
+
+        .chart-area svg {
+            width: 100%;
+            height: 100%;
+        }
+
+        .chart-y-label {
+            position: absolute;
+            left: -44px;
+            top: 50%;
+            transform: rotate(-90deg) translateX(-50%);
+            font-size: 11px;
+            color: #999;
+            white-space: nowrap;
+        }
+
+        .chart-x-label {
+            text-align: center;
+            font-size: 11px;
+            color: #999;
+            margin-top: 4px;
+        }
+
+        .chart-legend {
+            display: flex;
+            justify-content: center;
+            gap: 24px;
+            margin-top: 12px;
+            font-size: 12px;
+            color: #555;
+        }
+
+        .legend-dot {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 6px;
+            vertical-align: middle;
+        }
+
+        .legend-dot.green { background: #4caf50; }
+        .legend-dot.blue  { background: #5c8abf; }
+
+        .job-annotation {
+            font-size: 12px;
+            padding: 6px 10px;
+            border-radius: 4px;
+            margin: 4px 0;
+        }
+
+        .job-annotation.green {
+            background: #f0f8e8;
+            border-left: 3px solid #4caf50;
+            color: #444;
+        }
+
+        .job-annotation.blue {
+            background: #e8f0f8;
+            border-left: 3px solid #5c8abf;
+            color: #444;
+        }
+
+        .job-annotation strong {
+            color: #222;
+        }
+
+        /* 总结 */
+        .summary-section {
+            margin-top: 44px;
+            border-top: 2px solid #6aab2e;
+            padding-top: 28px;
+        }
+
+        .summary-section h2 {
+            font-size: 22px;
+            color: #333;
+            margin-bottom: 16px;
+        }
+
+        .summary-section > ul {
+            list-style: none;
+            padding: 0;
+        }
+
+        .summary-section > ul > li {
+            position: relative;
+            padding: 8px 0 8px 20px;
+            font-size: 15px;
+            color: #444;
+            line-height: 1.75;
+        }
+
+        .summary-section > ul > li::before {
+            content: "•";
+            position: absolute;
+            left: 0;
+            color: #6aab2e;
+            font-weight: 700;
+        }
+
+        .summary-section li strong {
+            color: #222;
+        }
+
+        .summary-section li code {
+            background: #f0f0f0;
+            padding: 1px 5px;
+            border-radius: 3px;
+            font-size: 13px;
+        }
+
+        .sub-list {
+            list-style: none;
+            padding-left: 20px;
+            margin-top: 6px;
+        }
+
+        .sub-list li {
+            position: relative;
+            padding: 3px 0 3px 16px;
+            font-size: 14px;
+            color: #555;
+        }
+
+        .sub-list li::before {
+            content: "–";
+            position: absolute;
+            left: 0;
+            color: #999;
+        }
+    </style>
+</head>
+<body>
+
+<div class="slide-container">
+
+    <!-- 标题 -->
+    <div class="slide-title">
+        <h1>NCCL Inspector</h1>
+        <div class="subtitle">作业内 / 实时 / 常驻的 NCCL 可观测性</div>
+    </div>
+
+    <div class="main-layout">
+
+        <!-- 左侧：文字内容 -->
+        <div class="text-side">
+
+            <div class="section-heading why">为什么需要（Why）</div>
+            <ul class="content-list">
+                <li>通过低开销的作业内 NCCL 可观测性，<strong>加速 AI 工作负载的性能调试</strong></li>
+                <li>支持 profiling —— <strong>A/B 性能对比</strong>或与理论峰值（SOL）对比，配合集中式分析和异常检测</li>
+            </ul>
+
+            <div class="section-heading what">是什么（What）</div>
+            <ul class="content-list">
+                <li>NCCL <strong>传输无关</strong>的 profiling 框架（适用于 NVLink、IB/RoCE、EFA、TCP 等所有传输方式）</li>
+                <li>常驻开启，开销极低（<strong>约 0.5–1%</strong>），采样频率可调，分析与数据采集<strong>解耦</strong></li>
+            </ul>
+
+            <div class="section-heading how">如何工作（How）</div>
+            <ul class="content-list">
+                <li>NCCL Inspector 按 <strong>per-comm</strong>、<strong>per-collective</strong>、<strong>per-msgsize</strong> 三个维度采集性能和状态数据</li>
+                <li class="sub-item">Timer 追踪内核启动和完成事件</li>
+                <li class="sub-item">集合通信元数据（size、comms、序列号等）</li>
+                <li>数据采集与分析后端<strong>分离</strong></li>
+            </ul>
+
+            <div class="section-heading roadmap">路线图（On Roadmap）</div>
+            <ul class="content-list">
+                <li>按需开关事件 <span class="roadmap-tag">规划中</span></li>
+                <li>Device API 支持 <span class="roadmap-tag">规划中</span></li>
+            </ul>
+
+        </div>
+
+        <!-- 右侧：图表 -->
+        <div class="chart-side">
+            <div class="chart-title">NVLink-Only ReduceScatter</div>
+
+            <div class="chart-area">
+                <svg viewBox="0 0 400 220" preserveAspectRatio="none">
+                    <!-- 网格线 -->
+                    <line x1="0" y1="0" x2="400" y2="0" stroke="#f0f0f0" stroke-width="0.5"/>
+                    <line x1="0" y1="36" x2="400" y2="36" stroke="#f0f0f0" stroke-width="0.5"/>
+                    <line x1="0" y1="73" x2="400" y2="73" stroke="#f0f0f0" stroke-width="0.5"/>
+                    <line x1="0" y1="110" x2="400" y2="110" stroke="#f0f0f0" stroke-width="0.5"/>
+                    <line x1="0" y1="146" x2="400" y2="146" stroke="#f0f0f0" stroke-width="0.5"/>
+                    <line x1="0" y1="183" x2="400" y2="183" stroke="#f0f0f0" stroke-width="0.5"/>
+
+                    <!-- Job 2311328 (绿色 - 高带宽 ~280-300 GB/s) -->
+                    <polyline points="0,30 20,25 40,35 60,28 80,40 100,32 120,22 140,38 160,30 180,25 200,35 220,28 240,20 260,32 280,38 300,25 320,30 340,22 360,28 380,20 400,25"
+                        fill="none" stroke="#4caf50" stroke-width="2"/>
+
+                    <!-- Job 2310073 (蓝色 - 低带宽 ~70-90 GB/s) -->
+                    <polyline points="0,158 20,162 40,155 60,165 80,160 100,155 120,163 140,158 160,168 180,155 200,160 220,165 240,158 260,148 280,155 300,162 320,145 340,155 360,140 380,150 400,148"
+                        fill="none" stroke="#5c8abf" stroke-width="2"/>
+
+                    <!-- Y轴刻度标签 -->
+                    <text x="-4" y="5" text-anchor="end" font-size="9" fill="#999">300</text>
+                    <text x="-4" y="41" text-anchor="end" font-size="9" fill="#999">250</text>
+                    <text x="-4" y="78" text-anchor="end" font-size="9" fill="#999">200</text>
+                    <text x="-4" y="114" text-anchor="end" font-size="9" fill="#999">150</text>
+                    <text x="-4" y="151" text-anchor="end" font-size="9" fill="#999">100</text>
+                    <text x="-4" y="187" text-anchor="end" font-size="9" fill="#999">50</text>
+                </svg>
+            </div>
+
+            <div class="chart-x-label">Op Sequence Number（操作序列号）</div>
+
+            <div style="margin-top: 16px;">
+                <div class="job-annotation green">
+                    <strong>Job 2311328</strong> — 性能：376.48 TFLOP/s/GPU &nbsp;|&nbsp; ~280–300 GB/s 内核总线带宽
+                </div>
+                <div class="job-annotation blue">
+                    <strong>Job 2310073</strong> — 性能：370.83 TFLOP/s/GPU &nbsp;|&nbsp; ~70–90 GB/s 内核总线带宽
+                </div>
+            </div>
+
+            <div class="chart-legend">
+                <span><span class="legend-dot green"></span>2311328-50.33MB_r_8</span>
+                <span><span class="legend-dot blue"></span>2310073-50.33MB_r_8</span>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- 总结 -->
+    <div class="summary-section">
+        <h2>内容总结</h2>
+        <ul>
+            <li><strong>NCCL Inspector</strong> 是一个常驻运行、实时采集的 NCCL 性能可观测性框架，专为生产环境中的 AI 训练工作负载设计。</li>
+            <li><strong>核心定位 —— 低开销常驻监控：</strong>开销仅 0.5–1%，采样频率可调，允许在生产作业中始终保持开启，而非仅在调试时临时启用。数据采集与分析后端解耦，采集不阻塞通信。</li>
+            <li><strong>传输无关：</strong>无论底层使用 NVLink、InfiniBand、RoCE、EFA 还是 TCP，Inspector 都能统一采集，无需针对不同传输方式使用不同工具。</li>
+            <li><strong>三维度采集：</strong>
+                <ul class="sub-list">
+                    <li><strong>per-comm</strong> — 按通信器粒度，区分不同通信组的行为</li>
+                    <li><strong>per-collective</strong> — 按集合操作类型（AllReduce / ReduceScatter 等）分类</li>
+                    <li><strong>per-msgsize</strong> — 按消息大小分桶，识别不同数据量级下的性能特征</li>
+                </ul>
+            </li>
+            <li><strong>右侧图表解读：</strong>对比两个作业在 NVLink ReduceScatter 操作上的内核总线带宽。Job 2311328 稳定在 ~280–300 GB/s（376.48 TFLOP/s/GPU），而 Job 2310073 仅 ~70–90 GB/s（370.83 TFLOP/s/GPU）。虽然两者计算性能接近，但通信带宽差异 3–4 倍——这种"计算正常但通信异常"的问题正是 Inspector 能快速定位的典型场景。</li>
+            <li><strong>路线图功能：</strong>未来将支持按需开关特定事件的采集（减少不需要时的开销），以及 Device API 支持（在内核级别采集通信指标）。</li>
+        </ul>
+    </div>
+
+</div>
+
+</body>
+</html>

@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>读懂分析结果所需的最小词汇表</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: #fafafa;
+  color: #1a1a1a;
+  padding: 3rem 2rem;
+  max-width: 1300px;
+  margin: 0 auto;
+}
+.label {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid #ccc;
+  margin-bottom: 0.8rem;
+}
+.label--red { color: #a04040; border-color: #c88; }
+.label--gold { color: #8b6914; border-color: #d4a843; }
+h1 {
+  font-size: 2.2rem;
+  font-weight: 800;
+  margin-bottom: 2.5rem;
+}
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+.card {
+  border: 1px solid #e0e0e0;
+  background: #fff;
+  padding: 1.5rem;
+}
+.card h2 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin-bottom: 0.7rem;
+}
+.card p {
+  font-size: 0.85rem;
+  color: #555;
+  line-height: 1.6;
+  margin-bottom: 1.2rem;
+}
+.code-block {
+  background: #f5f5f0;
+  border: 1px solid #e8e8e3;
+  padding: 0.8rem 1rem;
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 0.78rem;
+  line-height: 1.7;
+}
+.code-block .inst { color: #c0392b; }
+.code-block .kw { color: #2980b9; }
+.code-block .comment { color: #888; }
+.deep-dive {
+  margin-bottom: 2.5rem;
+  border: 1px solid #e0e0e0;
+  border-top: 3px solid #a04040;
+  background: #fff;
+  padding: 2rem;
+}
+.deep-dive h2 {
+  font-size: 1.3rem;
+  font-weight: 700;
+  margin-bottom: 1.5rem;
+}
+.mechanism-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+.mechanism {
+  border: 1px solid #e8e8e3;
+  padding: 1.2rem;
+}
+.mechanism h3 {
+  font-size: 1rem;
+  font-weight: 700;
+  margin-bottom: 0.4rem;
+}
+.mechanism .mech-sub {
+  font-size: 0.78rem;
+  color: #888;
+  margin-bottom: 0.8rem;
+}
+.mechanism p {
+  font-size: 0.82rem;
+  color: #555;
+  line-height: 1.6;
+  margin-bottom: 1rem;
+}
+.decision-flow {
+  border: 1px solid #e8e8e3;
+  background: #f9f9f6;
+  padding: 1.2rem 1.5rem;
+  margin-bottom: 1.5rem;
+  font-size: 0.85rem;
+  line-height: 1.8;
+  color: #444;
+}
+.decision-flow strong { color: #1a1a1a; }
+.divergence-box {
+  border: 1px solid #e0e0e0;
+  border-left: 4px solid #a04040;
+  background: #fdf8f8;
+  padding: 1.2rem 1.5rem;
+}
+.divergence-box h3 {
+  font-size: 1rem;
+  font-weight: 700;
+  margin-bottom: 0.6rem;
+}
+.divergence-box p {
+  font-size: 0.85rem;
+  color: #555;
+  line-height: 1.7;
+  margin-bottom: 0.8rem;
+}
+.divergence-box p:last-child { margin-bottom: 0; }
+.audit-chain {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+.audit-step {
+  background: #f5f5f0;
+  border: 1px solid #e0e0e0;
+  padding: 0.5rem;
+  text-align: center;
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+.audit-step .step-name {
+  font-weight: 700;
+  margin-bottom: 0.2rem;
+}
+.audit-step .step-desc {
+  color: #888;
+}
+@media (max-width: 900px) {
+  .grid { grid-template-columns: 1fr; }
+  .mechanism-grid { grid-template-columns: 1fr; }
+  .audit-chain { grid-template-columns: 1fr 1fr 1fr; }
+}
+</style>
+</head>
+<body>
+
+<div class="label">最小硬件模型</div>
+<h1>读懂分析结果所需的最小词汇表</h1>
+
+<div class="grid">
+  <div class="card">
+    <div class="label label--red">分支 / 谓词</div>
+    <h2>分支形态是编译器生成的结构</h2>
+    <p>源码中的 <code>if</code> 可能变为谓词执行、分支跳转、reconvergence 或 uniform control。分歧（divergence）是一个硬件执行层面的问题。</p>
+    <div class="code-block">
+      <span class="inst">setp.ne.s32</span> %p0, %r1, 0;<br>
+      @!p0 bra target;
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="label label--red">寄存器 / Local</div>
+    <h2>溢出将寄存器压力变为内存流量</h2>
+    <p><code>.local</code> 是线程私有的地址空间，但 spill/reload 流量本质上是一条会在运行时产生开销的内存路径。</p>
+    <div class="code-block">
+      <span class="inst">st.local.u64</span> [%rd2], %rd88;<br>
+      <span class="inst">ld.local.u64</span> %rd120, [%rd2];
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="label label--gold">内存空间</div>
+    <h2>地址空间是算法的一部分</h2>
+    <p>global、shared、local、constant、向量宽度和合并访问（coalescing）共同决定数据搬运是否符合预期路径。</p>
+    <div class="code-block">
+      <span class="inst">ld.global.v4</span><br>
+      <span class="inst">ld.shared</span><br>
+      <span class="inst">ld.const</span>
+    </div>
+  </div>
+</div>
+
+<div class="deep-dive">
+  <h2>深入：PTX 中的三种条件执行机制</h2>
+
+  <div class="mechanism-grid">
+    <div class="mechanism">
+      <h3>Predicate（谓词）</h3>
+      <div class="mech-sub">不跳转，两边都执行，用掩码选结果</div>
+      <p>两条指令都会发射，被"掩掉"的那条不写回结果。没有分支跳转，没有 warp 分裂的风险。适合两个分支都很短（一两条指令）的情况。</p>
+      <div class="code-block">
+        <span class="inst">setp.gt.f32</span> %p1, %f1, %f2;<br>
+        @%p1&nbsp; <span class="inst">add.f32</span> %f3, %f1, 1.0;<br>
+        @!%p1 <span class="inst">add.f32</span> %f3, %f2, 1.0;
+      </div>
+    </div>
+
+    <div class="mechanism">
+      <h3>Branch（分支跳转）</h3>
+      <div class="mech-sub">真正的控制流跳转</div>
+      <p>如果 warp 内 32 个线程走了不同方向则 diverge，两条路径串行执行。适合分支体较长、用 predicate 全执行代价太大的情况。</p>
+      <div class="code-block">
+        <span class="inst">setp.ne.s32</span> %p0, %r1, 0;<br>
+        @!p0 <span class="kw">bra</span> ELSE_LABEL;<br>
+        <span class="comment">// then 代码 ...</span><br>
+        <span class="kw">bra</span> END_LABEL;<br>
+        <span class="comment">// else 代码 ...</span>
+      </div>
+    </div>
+
+    <div class="mechanism">
+      <h3>Uniform Control（统一控制流）</h3>
+      <div class="mech-sub">编译器能证明 warp 内所有线程走同一边</div>
+      <p>条件在 warp 内一定一致（如基于 blockIdx 的判断）。硬件可优化：不需要保存 reconvergence 点，不需要两条路径都跑。</p>
+      <div class="code-block">
+        <span class="comment">// uniform predicate</span><br>
+        @%<span class="kw">up0</span> <span class="kw">bra</span> TARGET;
+      </div>
+    </div>
+  </div>
+
+  <div class="decision-flow">
+    <strong>编译器的选择逻辑：</strong>源码 <code>if (cond) { A } else { B }</code> →
+    分支体很短 → <strong>Predicate</strong>（两边都执行，掩码选）｜
+    分支体较长 → <strong>Branch</strong>（跳转，可能 diverge）｜
+    编译器能证明 warp 内一致 → <strong>Uniform</strong>（无 divergence 风险）
+  </div>
+
+  <div class="divergence-box">
+    <h3>Divergence 是硬件执行层的问题，不是编译层的问题</h3>
+    <p>源码层根本判断不了是否会 diverge，因为它取决于<strong>运行时每个线程的数据值</strong>。同一段 <code>if (x[threadIdx.x] > 0)</code>，一个 warp 内 32 个线程的 <code>x</code> 全 &gt; 0 就不 diverge；16 个 &gt; 0、16 个 ≤ 0 就 diverge。同一份代码，换一批输入数据，行为完全不同。</p>
+    <p>PTX 能告诉你"编译器给了 diverge 的<strong>可能性</strong>"（用了 branch 而不是 uniform），但"是否真的发生了"只有硬件在运行时才知道。最终由 Nsight profiler 报告实际的 divergent branch 次数。</p>
+    <div class="audit-chain">
+      <div class="audit-step"><div class="step-name">源码</div><div class="step-desc">只看到 if</div></div>
+      <div class="audit-step"><div class="step-name">PTX</div><div class="step-desc">看到策略选择</div></div>
+      <div class="audit-step"><div class="step-name">SASS</div><div class="step-desc">静态结构</div></div>
+      <div class="audit-step"><div class="step-name">运行时</div><div class="step-desc">硬件判定</div></div>
+      <div class="audit-step"><div class="step-name">Profiler</div><div class="step-desc">量化 diverge</div></div>
+      <div class="audit-step"><div class="step-name">结论</div><div class="step-desc">是否需要优化</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <div class="label label--gold">Tensor Cores</div>
+    <h2>原生数学路径是可见的</h2>
+    <p>tensor core 的使用不仅仅是源码层面的声明，它应该在目标架构的 PTX/SASS 中以可识别的 opcode 形式出现。</p>
+    <div class="code-block">
+      <span class="inst">mma.sync</span><br>
+      <span class="kw">HGMMA</span><br>
+      <span class="kw">HMMA</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="label label--gold">Barrier / 异步</div>
+    <h2>协调变成了显式的</h2>
+    <p>异步拷贝、TMA 和 Hopper 的 tensor 路径需要显式的等待、到达通知、barrier 和流水线纪律。</p>
+    <div class="code-block">
+      <span class="inst">mbarrier</span><br>
+      <span class="kw">ARRIVES</span><br>
+      <span class="inst">bar.sync</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="label">调度器 / Stall</div>
+    <h2>静态结构不等于运行时开销</h2>
+    <p>指令序列只是提出假设。真正的 stall、occupancy、带宽和延迟是否构成瓶颈，由 Nsight 和 benchmark 来裁定。</p>
+    <div class="code-block">
+      <span class="comment">// 先看结构</span><br>
+      <span class="comment">// 再量性能</span>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
